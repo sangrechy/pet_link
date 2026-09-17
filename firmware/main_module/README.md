@@ -1,64 +1,64 @@
-# ESP32 Main Module Firmware
+﻿# Main ESP32 Robotics & BLE Controller Firmware 🤖⚙️
 
-## Overview
-This module runs on a standard **ESP32** board (NodeMCU-32S / ESP32 DevKit) and handles core robotics logic, including motion control, kinematics, 2-axis Pan/Tilt servo actuation, and command telemetry for the robot.
-
-> **Note on Architecture:** Video streaming is offloaded to a separate dedicated module (`../cam_module` running on an ESP32-CAM).
+This module runs on a standard **ESP32** (NodeMCU-32S / ESP32 DevKit) and serves as the core robotics controller for mobility, gimbal tracking, BLE connectivity, and hardware supervision of the camera module.
 
 ---
 
-## Hardware Configuration & Soldered GPIO Allocation
+## 🧭 Navigation
 
-### Motor Driver 1 (TB6612FNG #1)
-Controls **M1** (Back Left) and **M2** (Front Right).
-
-| Signal | ESP32 Pin | Function |
-| :--- | :--- | :--- |
-| **PWMA** | **GPIO 25** | M1 Speed (LEDC PWM) |
-| **AIN1** | **GPIO 27** | M1 Direction Pin 1 |
-| **AIN2** | **GPIO 26** | M1 Direction Pin 2 |
-| **PWMB** | **GPIO 13** | M2 Speed (LEDC PWM) |
-| **BIN1** | **GPIO 32** | M2 Direction Pin 1 |
-| **BIN2** | **GPIO 33** | M2 Direction Pin 2 |
-| **STBY** | **GPIO 14** | Driver 1 Standby / Enable (Active HIGH) |
-
-### Motor Driver 2 (TB6612FNG #2)
-Controls **M3** (Front Left) and **M4** (Back Right).
-
-| Signal | ESP32 Pin | Function |
-| :--- | :--- | :--- |
-| **PWMA** | **GPIO 18** | M3 Speed (LEDC PWM) |
-| **AIN1** | **GPIO 21** | M3 Direction Pin 1 |
-| **AIN2** | **GPIO 19** | M3 Direction Pin 2 |
-| **PWMB** | **GPIO 4**  | M4 Speed (LEDC PWM) |
-| **BIN1** | **GPIO 23** | M4 Direction Pin 1 |
-| **BIN2** | **GPIO 15** | M4 Direction Pin 2 |
-| **STBY** | **GPIO 22** | Driver 2 Standby / Enable (Active HIGH) |
-
-### Servo Actuators (2-Axis Pan & Tilt)
-Controls camera or sensor orientation.
-
-| Actuator | ESP32 Pin | Function |
-| :--- | :--- | :--- |
-| **SERVO 1** | **GPIO 5** | Pan (Horizontal 0°–180°, LEDC 50 Hz PWM) |
-| **SERVO 2** | **GPIO 2** | Tilt (Vertical 0°–180°, LEDC 50 Hz PWM) *(or GPIO 16 if exposed)* |
+- [**Master Hardware Pinout Guide (../README.md)**](../README.md) — Complete pinout and GPIO mapping table.
+- [**ESP32-CAM Vision Module (../cam_module/README.md)**](../cam_module/README.md) — UDP video streaming engine.
+- [**Application Software Guide (../../application/README.md)**](../../application/README.md) — How to install software and run the web cockpit.
+- [**Project Root Overview (../../README.md)**](../../README.md) — System features and architecture.
 
 ---
 
-## Motor Mapping & Software Polarity
+## 🌟 Key Responsibilities
 
-Because motors are mounted in opposing physical orientations across the chassis, physical forward motion requires software polarity inversion instead of altering physical wiring or soldering.
+1. **4WD Skid-Steer Motor Drive**:
+   - Interfaces with 2x TB6612FNG dual H-bridge motor drivers over 20 kHz silent LEDC PWM.
+   - Built-in software polarity correction for mirrored chassis motor mounting (no physical re-soldering needed).
+   - Supports forward, backward, in-place spin, differential drive (M <left> <right>), and front/rear selective braking (MB <left> <right> <brake_mode>).
 
-| Motor | Position | Driver | Software Polarity for Forward | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| **M1** | Back Left | Driver 1 (A) | **Reversed** | Invert control logic (AIN1 LOW, AIN2 HIGH) |
-| **M2** | Front Right | Driver 1 (B) | **Reversed** | Invert control logic (BIN1 LOW, BIN2 HIGH) |
-| **M3** | Front Left | Driver 2 (A) | **Normal** | Direct control logic (AIN1 HIGH, AIN2 LOW) |
-| **M4** | Back Right | Driver 2 (B) | **Normal** | Direct control logic (BIN1 HIGH, BIN2 LOW) |
+2. **2-Axis Pan & Tilt Servo Gimbal**:
+   - 50 Hz PWM with 14-bit resolution on GPIO 5 (Tilt) and GPIO 2 (Pan).
+   - Full 0°–180° range (500 µs – 2500 µs pulse width).
+   - Instant home-centering to 90°/90° via H command (Joystick Button 11).
 
-### Movement Behavior Summary
-- **Forward:** Drive all 4 motors according to the software polarity table above.
-- **Backward:** Invert all directions relative to forward motion.
-- **Spin Left:** Left motors (M1, M3) reverse; Right motors (M2, M4) forward.
-- **Spin Right:** Left motors (M1, M3) forward; Right motors (M2, M4) reverse.
-- **Physical Soldering:** Soldering and physical wiring remain untouched; directional corrections are handled strictly in the firmware control layer.
+3. **High-Speed BLE GATT Server (Nordic UART Service)**:
+   - Advertises as PetVision-Robot with perpetual advertising maintenance so reconnects are instantaneous.
+   - Custom NUS UUIDs:
+     - **Service UUID:** 6E400001-B5A3-F393-E0A9-E50E24DCCA9E
+     - **RX Characteristic (Commands):** 6E400002-B5A3-F393-E0A9-E50E24DCCA9E
+     - **TX Characteristic (Telemetry & IP):** 6E400003-B5A3-F393-E0A9-E50E24DCCA9E
+   - Immediately pushes newly discovered camera IP to the connected controller via BLE notification.
+
+4. **Inter-ESP32 Hardware UART2 Supervisor Watchdog**:
+   - Uses hardware Serial2 (GPIO 16 RX2, GPIO 17 TX2 @ 115200 baud).
+   - Listens for periodic camera heartbeats (CAM_HEARTBEAT:...).
+   - If the camera becomes unresponsive for $>8\text{ seconds}$, the Main ESP32 automatically transmits a REBOOT\n pulse to unfreeze the camera.
+
+5. **Motion Fail-Safe Watchdog**:
+   - If communication is lost or no packet is received within 800 ms while the robot is moving, all 4 motors halt automatically.
+
+---
+
+## 📌 Hardware Pinout Summary
+
+> For the comprehensive pinout and wiring diagram, refer to the [**Master Pinout Guide (../README.md)**](../README.md).
+
+- **Driver 1 (M1 Back Left, M2 Front Right):** PWMA: IO25, AIN2: IO26, AIN1: IO27, BIN1: IO32, BIN2: IO33, PWMB: IO13, STBY: IO14
+- **Driver 2 (M3 Front Left, M4 Back Right):** PWMA: IO18, AIN2: IO19, AIN1: IO21, BIN1: IO23, BIN2: IO15, PWMB: IO4, STBY: IO22
+- **Servos:** Servo 1 (Tilt): IO5, Servo 2 (Pan): IO2
+- **UART2 to Camera:** RX2: IO16 $\longleftarrow$ Camera TX, TX2: IO17 $\longrightarrow$ Camera RX
+
+---
+
+## 🛠️ How to Compile & Flash
+
+Using rduino-cli:
+`ash
+tools/arduino-cli/arduino-cli.exe compile --fqbn esp32:esp32:esp32 firmware/main_module
+tools/arduino-cli/arduino-cli.exe upload -p COM3 --fqbn esp32:esp32:esp32 firmware/main_module
+`
+*(Or open irmware/main_module/main_module.ino in the Arduino IDE and select board ESP32 Dev Module).*
