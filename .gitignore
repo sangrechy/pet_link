@@ -1,0 +1,43 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.class
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# User snapshots and photos (Personal Privacy Protection)
+snapshots/
+application/snapshots/
+*.jpg
+*.jpeg
+*.png
+
+# Toolchain binaries and caches
+tools/arduino-cli/arduino-cli.exe
+*.bin
+*.elf
+*.hex
+
+# IDE and Editor configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Logs and session backups
+*.log
+.hotspot_session.json
+*.session.json
+application/.hotspot_session.json
