@@ -548,21 +548,41 @@ document.addEventListener("DOMContentLoaded", () => {
         // Main ESP32 Node Box
         if (data.main_esp) {
           const mainOn = data.main_esp.online;
+          const isConn = data.main_esp.ble_connected;
+          const connMode = data.main_esp.connection_mode || (isConn ? "ble" : "disconnected");
+          const modeLabel = connMode === "serial" ? "USB SERIAL" : "BLE";
+          const portLabel = data.main_esp.port || "--";
+
           if (nodeMainDot) nodeMainDot.className = mainOn ? "node-state-dot online" : "node-state-dot";
-          if (nodeMainLink) nodeMainLink.textContent = data.main_esp.ble_connected ? `BLE (${data.main_esp.device_name || "CONNECTED"})` : (mainOn ? "UART RELAY" : "DISCONNECTED");
+          if (nodeMainLink) nodeMainLink.textContent = isConn ? `${modeLabel} (${portLabel})` : (mainOn ? "UART RELAY" : "DISCONNECTED");
           if (nodeMainDrive) nodeMainDrive.textContent = `Speed: ${data.main_esp.car_speed} (${data.main_esp.is_moving ? "MOVING" : "STOPPED"})`;
           if (nodeMainGimbal) nodeMainGimbal.textContent = `Pan: ${data.main_esp.pan}° | Tilt: ${data.main_esp.tilt}°`;
 
           // Header robot badge
-          if (data.main_esp.ble_connected) {
+          if (isConn) {
             robotStatusBadge.className = "status-pill online";
-            robotStatusText.textContent = `ROBOT: BLE (${data.main_esp.device_name || "CONNECTED"})`;
+            robotStatusText.textContent = `ROBOT: ${modeLabel} (${connMode === 'serial' ? (data.main_esp.port || 'COM3') : (data.main_esp.device_name || 'CONNECTED')})`;
           } else if (mainOn) {
             robotStatusBadge.className = "status-pill online";
             robotStatusText.textContent = "ROBOT: VIA CAM UART";
           } else {
             robotStatusBadge.className = "status-pill offline";
-            robotStatusText.textContent = "ROBOT: DISCONNECTED";
+            const shortStatus = (data.main_esp.status_msg || "DISCONNECTED").substring(0, 22).toUpperCase();
+            robotStatusText.textContent = `ROBOT: ${shortStatus}`;
+          }
+
+          // Modal Status Updates
+          if (modalConnStatus) {
+            if (isConn) {
+              modalConnStatus.className = "status-badge-mono online";
+              modalConnStatus.textContent = `CONNECTED (${modeLabel})`;
+            } else {
+              modalConnStatus.className = "status-badge-mono";
+              modalConnStatus.textContent = (data.main_esp.status_msg || "DISCONNECTED").toUpperCase();
+            }
+          }
+          if (modalConnPort) {
+            modalConnPort.textContent = isConn ? portLabel : (data.main_esp.status_msg || "--");
           }
 
           // Sync sliders/display
@@ -594,6 +614,208 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {}
 
     setTimeout(pollStatus, 1200);
+  }
+
+  // ==========================================================================
+  // 8. Connection Manager Modal (Manual BLE & USB Serial Fallback)
+  // ==========================================================================
+  const connModal = document.getElementById("conn-modal");
+  const btnOpenConnModal = document.getElementById("btn-open-conn-modal");
+  const btnCloseConnModal = document.getElementById("btn-close-conn-modal");
+  const modalConnStatus = document.getElementById("modal-conn-status");
+  const modalConnPort = document.getElementById("modal-conn-port");
+  const modalFeedbackMsg = document.getElementById("modal-feedback-msg");
+
+  const tabBtnBle = document.getElementById("tab-btn-ble");
+  const tabBtnSerial = document.getElementById("tab-btn-serial");
+  const tabContentBle = document.getElementById("tab-content-ble");
+  const tabContentSerial = document.getElementById("tab-content-serial");
+
+  const btnBleScan = document.getElementById("btn-ble-scan");
+  const bleScanSpinner = document.getElementById("ble-scan-spinner");
+  const bleScanBtnText = document.getElementById("ble-scan-btn-text");
+  const bleDeviceSelect = document.getElementById("ble-device-select");
+  const bleManualMac = document.getElementById("ble-manual-mac");
+  const btnBleConnect = document.getElementById("btn-ble-connect");
+
+  const btnSerialRefresh = document.getElementById("btn-serial-refresh");
+  const serialPortSelect = document.getElementById("serial-port-select");
+  const serialManualPort = document.getElementById("serial-manual-port");
+  const btnSerialConnect = document.getElementById("btn-serial-connect");
+  const btnConnDisconnect = document.getElementById("btn-conn-disconnect");
+
+  function openConnModal() {
+    if (connModal) connModal.style.display = "flex";
+  }
+
+  function closeConnModal() {
+    if (connModal) connModal.style.display = "none";
+  }
+
+  if (btnOpenConnModal) btnOpenConnModal.addEventListener("click", openConnModal);
+  if (robotStatusBadge) robotStatusBadge.addEventListener("click", openConnModal);
+  if (btnCloseConnModal) btnCloseConnModal.addEventListener("click", closeConnModal);
+
+  if (connModal) {
+    connModal.addEventListener("click", (e) => {
+      if (e.target === connModal) closeConnModal();
+    });
+  }
+
+  // Tabs switching
+  if (tabBtnBle && tabBtnSerial) {
+    tabBtnBle.addEventListener("click", () => {
+      tabBtnBle.classList.add("active");
+      tabBtnSerial.classList.remove("active");
+      if (tabContentBle) tabContentBle.style.display = "flex";
+      if (tabContentSerial) tabContentSerial.style.display = "none";
+    });
+
+    tabBtnSerial.addEventListener("click", () => {
+      tabBtnSerial.classList.add("active");
+      tabBtnBle.classList.remove("active");
+      if (tabContentSerial) tabContentSerial.style.display = "flex";
+      if (tabContentBle) tabContentBle.style.display = "none";
+      fetchSerialPorts();
+    });
+  }
+
+  // BLE Scan
+  async function scanBleDevices() {
+    if (bleScanSpinner) bleScanSpinner.style.display = "inline-block";
+    if (bleScanBtnText) bleScanBtnText.textContent = "Scanning...";
+    if (modalFeedbackMsg) modalFeedbackMsg.textContent = "Scanning nearby BLE devices (3.5s)...";
+
+    try {
+      const res = await fetch("/api/ble/scan");
+      const data = await res.json();
+      if (data.status === "ok" && data.devices) {
+        if (bleDeviceSelect) {
+          bleDeviceSelect.innerHTML = "";
+          if (data.devices.length === 0) {
+            bleDeviceSelect.innerHTML = '<option value="70:4B:CA:83:A8:EE">No devices found. Default: PetVision-Robot [70:4B:CA:83:A8:EE]</option>';
+          } else {
+            data.devices.forEach((dev) => {
+              const opt = document.createElement("option");
+              opt.value = dev.address || dev.name;
+              const star = dev.is_robot ? "🎯 " : "";
+              opt.textContent = `${star}${dev.name} [${dev.address}] (${dev.rssi} dBm)`;
+              bleDeviceSelect.appendChild(opt);
+            });
+            if (data.devices[0] && bleManualMac) {
+              bleManualMac.value = data.devices[0].address;
+            }
+          }
+        }
+        if (modalFeedbackMsg) modalFeedbackMsg.textContent = `Found ${data.devices.length} BLE devices.`;
+      } else {
+        if (modalFeedbackMsg) modalFeedbackMsg.textContent = data.message || "Scan completed with no devices.";
+      }
+    } catch (e) {
+      if (modalFeedbackMsg) modalFeedbackMsg.textContent = `Scan error: ${e.message}`;
+    } finally {
+      if (bleScanSpinner) bleScanSpinner.style.display = "none";
+      if (bleScanBtnText) bleScanBtnText.textContent = "🔄 Scan Nearby";
+    }
+  }
+
+  if (btnBleScan) btnBleScan.addEventListener("click", scanBleDevices);
+
+  if (bleDeviceSelect) {
+    bleDeviceSelect.addEventListener("change", () => {
+      if (bleDeviceSelect.value && bleManualMac) {
+        bleManualMac.value = bleDeviceSelect.value;
+      }
+    });
+  }
+
+  // BLE Connect
+  if (btnBleConnect) {
+    btnBleConnect.addEventListener("click", async () => {
+      const target = (bleManualMac ? bleManualMac.value.trim() : "") || (bleDeviceSelect ? bleDeviceSelect.value.trim() : "");
+      if (!target) return;
+      if (modalFeedbackMsg) modalFeedbackMsg.textContent = `Connecting to BLE: ${target}...`;
+      try {
+        const res = await fetch("/api/ble/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ target })
+        });
+        const data = await res.json();
+        if (modalFeedbackMsg) modalFeedbackMsg.textContent = data.message || "Connecting...";
+      } catch (e) {
+        if (modalFeedbackMsg) modalFeedbackMsg.textContent = `Error: ${e.message}`;
+      }
+    });
+  }
+
+  // Serial Ports Refresh
+  async function fetchSerialPorts() {
+    try {
+      const res = await fetch("/api/serial/ports");
+      const data = await res.json();
+      if (data.status === "ok" && data.ports && serialPortSelect) {
+        serialPortSelect.innerHTML = "";
+        if (data.ports.length === 0) {
+          const defaults = ["COM3", "COM5", "COM4", "COM1", "COM2"];
+          defaults.forEach((p) => {
+            const opt = document.createElement("option");
+            opt.value = p;
+            opt.textContent = `${p} ${p === 'COM3' ? '(Main ESP32)' : (p === 'COM5' ? '(ESP32-CAM)' : '')}`;
+            serialPortSelect.appendChild(opt);
+          });
+        } else {
+          data.ports.forEach((p) => {
+            const opt = document.createElement("option");
+            opt.value = p.port;
+            opt.textContent = `${p.port} — ${p.description || 'Serial Port'}`;
+            serialPortSelect.appendChild(opt);
+          });
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (btnSerialRefresh) btnSerialRefresh.addEventListener("click", fetchSerialPorts);
+
+  if (serialPortSelect) {
+    serialPortSelect.addEventListener("change", () => {
+      if (serialPortSelect.value && serialManualPort) {
+        serialManualPort.value = serialPortSelect.value;
+      }
+    });
+  }
+
+  // Serial Connect
+  if (btnSerialConnect) {
+    btnSerialConnect.addEventListener("click", async () => {
+      const port = (serialManualPort ? serialManualPort.value.trim() : "") || (serialPortSelect ? serialPortSelect.value.trim() : "COM3") || "COM3";
+      if (modalFeedbackMsg) modalFeedbackMsg.textContent = `Connecting to USB Serial ${port}...`;
+      try {
+        const res = await fetch("/api/serial/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ port, baud: 115200 })
+        });
+        const data = await res.json();
+        if (modalFeedbackMsg) modalFeedbackMsg.textContent = data.message || (data.status === "ok" ? "Connected!" : "Failed to open port");
+      } catch (e) {
+        if (modalFeedbackMsg) modalFeedbackMsg.textContent = `Error: ${e.message}`;
+      }
+    });
+  }
+
+  // Disconnect Robot
+  if (btnConnDisconnect) {
+    btnConnDisconnect.addEventListener("click", async () => {
+      if (modalFeedbackMsg) modalFeedbackMsg.textContent = "Disconnecting robot...";
+      try {
+        await fetch("/api/ble/disconnect", { method: "POST" });
+        if (modalFeedbackMsg) modalFeedbackMsg.textContent = "Robot disconnected.";
+      } catch (e) {
+        if (modalFeedbackMsg) modalFeedbackMsg.textContent = `Error: ${e.message}`;
+      }
+    });
   }
 
   // Initialize WebSockets and Polling

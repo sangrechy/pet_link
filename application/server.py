@@ -109,6 +109,10 @@ def udp_receiver_worker():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    except Exception:
+        pass
+    try:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
     except Exception:
         pass
@@ -287,10 +291,17 @@ BLE_TX_CHAR_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 class RobotBLEManager:
     def __init__(self, device_name: str = "PetVision-Robot"):
         self.device_name = device_name
+        self.target_address: Optional[str] = None
         self.client: Optional[BleakClient] = None
         self.is_connected: bool = False
-        self.connection_type: str = "ble"
+        self.connection_type: str = "ble" # "ble" or "serial"
+        self.connection_mode: str = "ble" # "ble" or "serial"
         self.port: str = f"{device_name} (BLE)"
+        self.status_msg: str = "Initializing BLE..."
+
+        # Serial connection fail-safe
+        self.serial_conn = None
+        self.serial_port: Optional[str] = None
 
         # Dynamic Car & Camera State
         self.car_speed: int = 220
@@ -322,66 +333,203 @@ class RobotBLEManager:
         asyncio.set_event_loop(self.loop)
         self.loop.run_until_complete(self._ble_worker_loop())
 
+    def _handle_telemetry_msg(self, msg: str):
+        try:
+            if msg.startswith("CROSSLINK:"):
+                self.last_cam_sync_time = time.time()
+                pairs = dict(item.split("=") for item in msg.split(":", 1)[1].split(",") if "=" in item)
+                self.cam_online_via_main = (pairs.get("CAM") == "1")
+                ip = pairs.get("IP", "")
+                if ip and ip not in ("0.0.0.0", "DISCONNECTED"):
+                    cam_state.cam_ip = ip
+            elif msg.startswith("CAM_IP:"):
+                self.last_cam_sync_time = time.time()
+                new_ip = msg.split(":", 1)[1].strip()
+                if new_ip and new_ip not in ("DISCONNECTED", "0.0.0.0"):
+                    cam_state.cam_ip = new_ip
+                    self.cam_online_via_main = True
+                    logger.info(f"[CAMERA_SYNC] Auto-discovered IP via Main ESP32 UART2 bridge: {new_ip}")
+            elif msg.startswith("CAM_STATUS:"):
+                if "OFFLINE" in msg:
+                    self.cam_online_via_main = False
+        except Exception as notif_e:
+            logger.warning(f"[TELEMETRY] Parse error: {notif_e}")
+
+    def _run_serial_reader(self):
+        logger.info(f"[SERIAL] Background reader active on {self.serial_port}")
+        while self.connection_mode == "serial" and self.serial_conn and self.serial_conn.is_open:
+            try:
+                line = self.serial_conn.readline().decode("utf-8", errors="replace").strip()
+                if not line:
+                    time.sleep(0.01)
+                    continue
+                self._handle_telemetry_msg(line)
+            except Exception as e:
+                logger.warning(f"[SERIAL] Reader error: {e}")
+                break
+        if self.connection_mode == "serial":
+            self.is_connected = False
+            self.status_msg = "USB Serial Disconnected"
+
+    def connect_serial(self, port: str = "COM3", baud: int = 115200) -> bool:
+        """Switch to USB Serial mode for direct laptop connection fail-safe."""
+        # Disconnect BLE if active
+        if self.client and self.client.is_connected and self.loop:
+            asyncio.run_coroutine_threadsafe(self.client.disconnect(), self.loop)
+
+        self.connection_mode = "serial"
+        self.connection_type = "serial"
+        self.serial_port = port
+
+        if self.serial_conn and self.serial_conn.is_open:
+            try:
+                self.serial_conn.close()
+            except Exception:
+                pass
+            self.serial_conn = None
+
+        try:
+            import serial
+            s = serial.Serial(port, baud, timeout=0.05)
+            s.dtr = False
+            s.rts = False
+            self.serial_conn = s
+            self.is_connected = True
+            self.port = f"{port} (USB Serial)"
+            self.status_msg = f"Connected via USB {port}"
+            logger.info(f"[SERIAL] Successfully opened direct USB link on {port}")
+
+            threading.Thread(target=self._run_serial_reader, daemon=True, name="RobotSerialThread").start()
+
+            self.send_command("GET_CAM_IP")
+            self.send_command("GET_CROSSLINK")
+            return True
+        except Exception as e:
+            logger.error(f"[SERIAL] Failed to open {port}: {e}")
+            self.status_msg = f"USB Serial error: {e}"
+            self.is_connected = False
+            return False
+
+    def connect_ble(self, target: Optional[str] = None):
+        """Switch to BLE mode and target specific MAC address or name."""
+        if self.serial_conn and self.serial_conn.is_open:
+            try:
+                self.serial_conn.close()
+            except Exception:
+                pass
+            self.serial_conn = None
+
+        self.connection_mode = "ble"
+        self.connection_type = "ble"
+
+        if target:
+            target = target.strip()
+            if (":" in target or "-" in target) and len(target) >= 12:
+                self.target_address = target.upper()
+                self.status_msg = f"Targeting MAC: {self.target_address}"
+            else:
+                self.device_name = target
+                self.status_msg = f"Targeting Name: {self.device_name}"
+
+        # Trigger immediate reconnect by disconnecting active client
+        if self.client and self.client.is_connected and self.loop:
+            asyncio.run_coroutine_threadsafe(self.client.disconnect(), self.loop)
+        return True
+
+    def disconnect_all(self):
+        """Disconnect both BLE and Serial."""
+        if self.serial_conn and self.serial_conn.is_open:
+            try:
+                self.serial_conn.close()
+            except Exception:
+                pass
+            self.serial_conn = None
+
+        if self.client and self.client.is_connected and self.loop:
+            asyncio.run_coroutine_threadsafe(self.client.disconnect(), self.loop)
+
+        self.is_connected = False
+        self.status_msg = "Disconnected by user"
+
     async def _ble_worker_loop(self):
         while True:
+            if self.connection_mode != "ble":
+                await asyncio.sleep(0.5)
+                continue
+
             try:
-                logger.info(f"[BLE] Scanning for robot '{self.device_name}'...")
-                device = await BleakScanner.find_device_by_name(self.device_name, timeout=5.0)
+                target_mac = self.target_address
+                target_name = self.device_name
+
+                self.status_msg = f"Scanning for {target_mac or target_name}..."
+                device = None
+
+                # 1. Target MAC address specified
+                if target_mac:
+                    try:
+                        device = await BleakScanner.find_device_by_address(target_mac, timeout=3.5)
+                    except Exception:
+                        pass
+
+                    if not device:
+                        devices = await BleakScanner.discover(timeout=3.0, return_adv=True)
+                        for addr, (d, adv) in devices.items():
+                            if addr.upper() == target_mac.upper():
+                                device = d
+                                break
+
+                # 2. Target Name or fallback
                 if not device:
+                    device = await BleakScanner.find_device_by_name(target_name, timeout=3.5)
+                    if not device:
+                        devices = await BleakScanner.discover(timeout=3.0, return_adv=True)
+                        for addr, (d, adv) in devices.items():
+                            name = (d.name or adv.local_name or "").lower()
+                            if "petvision" in name or "robot" in name:
+                                device = d
+                                self.target_address = addr
+                                break
+
+                if not device:
+                    self.status_msg = f"Waiting for {target_mac or target_name}..."
                     await asyncio.sleep(2.0)
                     continue
 
-                logger.info(f"[BLE] Found {device.name} [{device.address}]. Connecting...")
+                d_addr = getattr(device, "address", str(device))
+                d_name = getattr(device, "name", target_name)
+                self.status_msg = f"Connecting to {d_name} [{d_addr}]..."
+                logger.info(f"[BLE] Found {d_name} [{d_addr}]. Connecting...")
+
                 def on_disconnect(c):
                     logger.warning("[BLE] Robot disconnected!")
                     self.is_connected = False
                     self.client = None
+                    self.status_msg = "Disconnected"
 
-                # winrt use_cached_services=False ensures fresh GATT handle resolution on Windows
                 client = BleakClient(device, disconnected_callback=on_disconnect, winrt={"use_cached_services": False})
-                await client.connect()
+                await client.connect(timeout=6.0)
 
                 if client.is_connected:
                     self.client = client
                     self.is_connected = True
-                    logger.info(f"[BLE] Successfully connected to {self.device_name} over BLE!")
+                    self.port = f"{d_name} ({d_addr})"
+                    self.status_msg = f"Connected ({d_name})"
+                    logger.info(f"[BLE] Successfully connected to {d_name} [{d_addr}] over BLE!")
 
                     def on_notification(sender, data: bytearray):
-                        try:
-                            msg = data.decode("utf-8", errors="replace").strip()
-                            if msg.startswith("CROSSLINK:"):
-                                self.last_cam_sync_time = time.time()
-                                try:
-                                    pairs = dict(item.split("=") for item in msg.split(":", 1)[1].split(",") if "=" in item)
-                                    self.cam_online_via_main = (pairs.get("CAM") == "1")
-                                    ip = pairs.get("IP", "")
-                                    if ip and ip not in ("0.0.0.0", "DISCONNECTED"):
-                                        cam_state.cam_ip = ip
-                                except Exception:
-                                    pass
-                            elif msg.startswith("CAM_IP:"):
-                                self.last_cam_sync_time = time.time()
-                                new_ip = msg.split(":", 1)[1].strip()
-                                if new_ip and new_ip != "DISCONNECTED" and new_ip != "0.0.0.0":
-                                    cam_state.cam_ip = new_ip
-                                    self.cam_online_via_main = True
-                                    logger.info(f"[CAMERA_SYNC] Auto-discovered IP via Main ESP32 UART2 bridge: {new_ip}")
-                            elif msg.startswith("CAM_STATUS:"):
-                                if "OFFLINE" in msg:
-                                    self.cam_online_via_main = False
-                        except Exception as notif_e:
-                            logger.warning(f"[BLE_NOTIF] Parse error: {notif_e}")
+                        msg = data.decode("utf-8", errors="replace").strip()
+                        self._handle_telemetry_msg(msg)
 
                     try:
                         await client.start_notify(BLE_TX_CHAR_UUID, on_notification)
                         logger.info("[BLE] Subscribed to robot TX notifications.")
-                        # Query camera IP from Main ESP32
                         await client.write_gatt_char(BLE_RX_CHAR_UUID, b"GET_CAM_IP\n", response=False)
+                        await client.write_gatt_char(BLE_RX_CHAR_UUID, b"GET_CROSSLINK\n", response=False)
                     except Exception as sub_err:
                         logger.warning(f"[BLE] Could not subscribe to notifications: {sub_err}")
 
                     # Continuous command transmission & keep-alive loop
-                    while self.is_connected and client.is_connected:
+                    while self.is_connected and client.is_connected and self.connection_mode == "ble":
                         cmd_to_send = None
                         try:
                             cmd_to_send = self.cmd_queue.get_nowait()
@@ -389,7 +537,6 @@ class RobotBLEManager:
                             pass
 
                         now = time.time()
-                        # Fail-safe keep-alive: resend motion packet if moving and > 180ms elapsed
                         if cmd_to_send is None and self.is_moving and self.last_cmd != "S":
                             if now - self.last_cmd_time >= 0.18:
                                 cmd_to_send = self.last_cmd
@@ -403,12 +550,13 @@ class RobotBLEManager:
                                 logger.error(f"[BLE] Write failed: {write_err}")
                                 break
 
-                        await asyncio.sleep(0.015) # ~60 Hz tick
+                        await asyncio.sleep(0.015)
 
             except Exception as e:
                 logger.warning(f"[BLE] Connection error: {e}")
                 self.is_connected = False
                 self.client = None
+                self.status_msg = f"Error: {e}"
                 await asyncio.sleep(2.0)
 
     def send_command(self, cmd: str) -> bool:
@@ -436,7 +584,18 @@ class RobotBLEManager:
                 self.current_pan = 90
                 self.current_tilt = 90
 
-        # Prevent queue bloat: if queue is lagging, purge older velocity commands
+        # If in direct USB Serial mode: write directly to hardware port
+        if self.connection_mode == "serial" and self.serial_conn and self.serial_conn.is_open:
+            try:
+                self.serial_conn.write((cmd_str + "\n").encode("utf-8"))
+                self.last_cmd_time = time.time()
+                return True
+            except Exception as write_err:
+                logger.error(f"[SERIAL] Write failed: {write_err}")
+                self.is_connected = False
+                return False
+
+        # If in BLE mode: enqueue for background thread
         if self.cmd_queue.qsize() > 4:
             try:
                 while self.cmd_queue.qsize() > 1:
@@ -863,6 +1022,9 @@ async def get_robot_status():
     return {
         "connected": robot_mgr.is_connected,
         "connection_type": robot_mgr.connection_type,
+        "connection_mode": robot_mgr.connection_mode,
+        "status_msg": robot_mgr.status_msg,
+        "target_address": robot_mgr.target_address,
         "device_name": robot_mgr.device_name,
         "port": robot_mgr.port,
         "car_speed": robot_mgr.car_speed,
@@ -875,6 +1037,88 @@ async def get_robot_status():
             "connected": robot_mgr.joystick_connected,
             "name": robot_mgr.joystick_name
         }
+    }
+
+# --- Connection Management Endpoints (Manual BLE + USB Serial Fail-Safe) ---
+class BLEConnectRequest(BaseModel):
+    target: str
+
+@app.get("/api/ble/scan")
+async def scan_ble_devices():
+    """Scans for nearby BLE devices and returns list with robot recognition."""
+    try:
+        devices = await BleakScanner.discover(timeout=3.5, return_adv=True)
+        results = []
+        for addr, (d, adv) in devices.items():
+            name = d.name or adv.local_name or "Unknown Device"
+            rssi = adv.rssi if hasattr(adv, "rssi") else 0
+            is_robot = ("petvision" in name.lower() or "robot" in name.lower() or addr.upper() == "70:4B:CA:83:A8:EE")
+            results.append({
+                "address": addr,
+                "name": name,
+                "rssi": rssi,
+                "is_robot": is_robot
+            })
+        results.sort(key=lambda x: (not x["is_robot"], -x["rssi"]))
+        return {"status": "ok", "devices": results}
+    except Exception as e:
+        logger.warning(f"[BLE_SCAN] Scan failed: {e}")
+        return {"status": "error", "message": str(e), "devices": []}
+
+@app.post("/api/ble/connect")
+async def connect_ble_device(payload: BLEConnectRequest):
+    target = payload.target.strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Target MAC or device name required")
+    success = robot_mgr.connect_ble(target)
+    return {
+        "status": "ok" if success else "failed",
+        "target": target,
+        "message": robot_mgr.status_msg
+    }
+
+@app.post("/api/ble/disconnect")
+async def disconnect_robot_endpoint():
+    robot_mgr.disconnect_all()
+    return {"status": "ok", "message": "Robot disconnected"}
+
+@app.get("/api/serial/ports")
+async def get_serial_ports():
+    ports = []
+    try:
+        import serial.tools.list_ports
+        for p in serial.tools.list_ports.comports():
+            desc = p.description or ""
+            ports.append({"port": p.device, "description": desc})
+    except Exception:
+        pass
+
+    if not ports:
+        import serial
+        for i in range(1, 17):
+            pname = f"COM{i}"
+            try:
+                s = serial.Serial(pname)
+                s.close()
+                ports.append({"port": pname, "description": f"Serial Port ({pname})"})
+            except Exception:
+                pass
+
+    return {"status": "ok", "ports": ports}
+
+class SerialConnectRequest(BaseModel):
+    port: str = "COM3"
+    baud: int = 115200
+
+@app.post("/api/serial/connect")
+async def connect_serial_device(payload: SerialConnectRequest):
+    port = payload.port.strip()
+    success = robot_mgr.connect_serial(port=port, baud=payload.baud)
+    return {
+        "status": "ok" if success else "failed",
+        "port": port,
+        "connected": robot_mgr.is_connected,
+        "message": robot_mgr.status_msg
     }
 
 @app.get("/api/camera/flip")
@@ -919,6 +1163,11 @@ async def get_crosslink_status():
         "main_esp": {
             "online": main_online,
             "ble_connected": robot_mgr.is_connected,
+            "connection_mode": robot_mgr.connection_mode,
+            "connection_type": robot_mgr.connection_type,
+            "port": robot_mgr.port,
+            "status_msg": robot_mgr.status_msg,
+            "target_address": robot_mgr.target_address,
             "device_name": robot_mgr.device_name,
             "car_speed": robot_mgr.car_speed,
             "camera_speed": robot_mgr.camera_speed,

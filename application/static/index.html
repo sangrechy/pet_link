@@ -36,10 +36,17 @@
         </div>
 
         <!-- Robot Main ESP32 Status -->
-        <div class="status-pill offline" id="robot-status-badge" title="Main ESP32 Robotics Controller">
+        <div class="status-pill offline" id="robot-status-badge" title="Click to Open Robot Connection Manager" style="cursor: pointer;">
           <span class="status-dot"></span>
           <span id="robot-status-text">ESP32: CONNECTING...</span>
         </div>
+        <button id="btn-open-conn-modal" class="btn-conn-settings" title="Robot Connection Manager (BLE / USB Serial)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>CONN</span>
+        </button>
 
         <!-- Camera Status -->
         <div class="status-pill offline" id="cam-status-badge" title="ESP32-CAM UDP Video Stream">
@@ -398,6 +405,116 @@
         <span>4-WHEEL DRIVE (COM3) + 2-AXIS GIMBAL (IO5/IO2) + UDP VISION</span>
       </div>
     </footer>
+  </div>
+
+  <!-- Connection Manager Modal (Manual BLE Selection & Direct USB Serial Fail-Safe) -->
+  <div id="conn-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"></path>
+          </svg>
+          <h2>Robot Connection Manager</h2>
+        </div>
+        <button id="btn-close-conn-modal" class="modal-close-btn" title="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Current Connection State -->
+        <div class="conn-current-banner">
+          <span class="conn-label">ACTIVE LINK:</span>
+          <span id="modal-conn-status" class="status-badge-mono">CONNECTING...</span>
+          <span id="modal-conn-port" class="conn-port-tag mono">--</span>
+        </div>
+
+        <!-- Connection Mode Tabs -->
+        <div class="conn-tabs">
+          <button class="conn-tab-btn active" id="tab-btn-ble" data-tab="ble">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"></path>
+            </svg>
+            <span>Wireless BLE</span>
+          </button>
+          <button class="conn-tab-btn" id="tab-btn-serial" data-tab="serial">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+              <rect x="9" y="9" width="6" height="6"></rect>
+              <line x1="9" y1="1" x2="9" y2="4"></line>
+              <line x1="15" y1="1" x2="15" y2="4"></line>
+              <line x1="9" y1="20" x2="9" y2="23"></line>
+              <line x1="15" y1="20" x2="15" y2="23"></line>
+              <line x1="20" y1="9" x2="23" y2="9"></line>
+              <line x1="20" y1="14" x2="23" y2="14"></line>
+              <line x1="1" y1="9" x2="4" y2="9"></line>
+              <line x1="1" y1="14" x2="4" y2="14"></line>
+            </svg>
+            <span>Direct USB Cable (Serial)</span>
+          </button>
+        </div>
+
+        <!-- TAB 1: BLE Wireless -->
+        <div id="tab-content-ble" class="tab-pane active">
+          <div class="form-group">
+            <div class="label-with-action">
+              <label for="ble-device-select">Discovered BLE Devices:</label>
+              <button id="btn-ble-scan" class="btn-sm-action">
+                <span id="ble-scan-spinner" class="spinner-inline" style="display:none;"></span>
+                <span id="ble-scan-btn-text">🔄 Scan Nearby</span>
+              </button>
+            </div>
+            <select id="ble-device-select" class="dropdown-select">
+              <option value="70:4B:CA:83:A8:EE">🎯 PetVision-Robot [70:4B:CA:83:A8:EE] (Main ESP32)</option>
+              <option value="PetVision-Robot">PetVision-Robot (By Name)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="ble-manual-mac">Direct Hardware MAC / Name (Bypasses Scan Lag):</label>
+            <div class="input-with-button">
+              <input type="text" id="ble-manual-mac" class="text-input mono" placeholder="70:4B:CA:83:A8:EE" value="70:4B:CA:83:A8:EE" />
+              <button id="btn-ble-connect" class="btn-primary-action">Connect BLE</button>
+            </div>
+          </div>
+          <p class="conn-hint">💡 Direct MAC address targeting connects instantly even if Windows BLE background scanner is still querying device names.</p>
+        </div>
+
+        <!-- TAB 2: Direct USB Serial -->
+        <div id="tab-content-serial" class="tab-pane" style="display: none;">
+          <div class="form-group">
+            <div class="label-with-action">
+              <label for="serial-port-select">Select USB Serial Port:</label>
+              <button id="btn-serial-refresh" class="btn-sm-action">🔄 Refresh Ports</button>
+            </div>
+            <select id="serial-port-select" class="dropdown-select mono">
+              <option value="COM3" selected>COM3 (Main ESP32 Default)</option>
+              <option value="COM5">COM5 (ESP32-CAM Port)</option>
+              <option value="COM4">COM4</option>
+              <option value="COM1">COM1</option>
+              <option value="COM2">COM2</option>
+              <option value="COM6">COM6</option>
+              <option value="COM7">COM7</option>
+              <option value="COM8">COM8</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="serial-manual-port">Or Enter COM Port directly:</label>
+            <div class="input-with-button">
+              <input type="text" id="serial-manual-port" class="text-input mono" placeholder="COM3" value="COM3" />
+              <button id="btn-serial-connect" class="btn-primary-action">Connect USB</button>
+            </div>
+          </div>
+          <p class="conn-hint">⚡ 100% immune to Bluetooth interference! Sends high-speed drive commands & receives camera cross-link telemetry directly over USB cable.</p>
+        </div>
+
+        <!-- Modal Footer Actions -->
+        <div class="modal-footer-actions">
+          <button id="btn-conn-disconnect" class="btn-danger-action">Disconnect Robot</button>
+          <div id="modal-feedback-msg" class="conn-feedback-text"></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/static/app.js"></script>
