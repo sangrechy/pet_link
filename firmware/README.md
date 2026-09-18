@@ -1,4 +1,4 @@
-﻿# PetVision Firmware & Hardware Pinout Guide 🔌⚡
+# PetVision Firmware & Hardware Pinout Guide 🔌⚡
 
 This directory contains the firmware source code for the two ESP32 microcontrollers powering the robot, along with the master hardware wiring and GPIO allocation guide.
 
@@ -6,10 +6,10 @@ This directory contains the firmware source code for the two ESP32 microcontroll
 
 ## 🧭 Submodule Navigation
 
-- [**Main Robotics & BLE Module (main_module/)**](main_module/README.md) — 4WD motor drive, kinematics, 2-axis Pan/Tilt servo control, BLE GATT server, and UART2 camera supervisor.
-- [**Vision & UDP Camera Module (cam_module/)**](cam_module/README.md) — ESP32-CAM zero-overhead UDP live video engine, 10 FPS rate pacing, and Core 0 freeze watchdog.
-- [**Main Project Overview (../README.md)**](../README.md) — High-level architecture and system features.
-- [**Application Software Guide (../application/README.md)**](../application/README.md) — How to install dependencies, run the backend, and use the web cockpit.
+- [**Main Robotics & BLE Module (`main_module/`)**](main_module/README.md) — 4WD motor drive, kinematics, 2-axis Pan/Tilt servo control, BLE GATT server, and UART2 camera supervisor.
+- [**Vision & UDP Camera Module (`cam_module/`)**](cam_module/README.md) — ESP32-CAM zero-overhead UDP live video engine, 10 FPS rate pacing, and Core 0 freeze watchdog.
+- [**Main Project Overview (`../README.md`)**](../README.md) — High-level architecture and system features.
+- [**Application Software Guide (`../application/README.md`)**](../application/README.md) — How to install dependencies, run the backend, and use the web cockpit.
 
 ---
 
@@ -70,7 +70,7 @@ A dedicated physical UART link connects the ESP32-CAM and Main ESP32 for instant
 
 ### Complete GPIO Master Allocation Table
 
-`	ext
+```text
 GPIO 2  ───► Servo 2 (Pan: Left / Right)
 GPIO 4  ───► Motor M4 PWMB (Back Right Speed)
 GPIO 5  ───► Servo 1 (Tilt: Up / Down)
@@ -92,7 +92,7 @@ GPIO 27 ───► Motor M1 AIN1 (Back Left Dir 1)
 
 GPIO 32 ───► Motor M2 BIN1 (Front Right Dir 1)
 GPIO 33 ───► Motor M2 BIN2 (Front Right Dir 2)
-`
+```
 
 ---
 

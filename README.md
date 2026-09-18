@@ -1,4 +1,4 @@
-﻿# pet_link 🐾🤖
+# pet_link 🐾🤖
 
 **pet_link** is a high-performance, untethered robotics cockpit and live vision streaming system powered by dual ESP32 microcontrollers, a unified Python backend, and an interactive browser dashboard.
 
@@ -6,7 +6,7 @@
 
 ## 🌟 What is pet_link?
 
-pet_link bridges low-latency computer vision, agile 4WD robotics mobility, and precision camera tracking into a single unified platform:
+`pet_link` bridges low-latency computer vision, agile 4WD robotics mobility, and precision camera tracking into a single unified platform:
 
 - **Live Video Streaming:** Zero-overhead UDP live streaming (Port 5000) from an ESP32-CAM directly to an HTML5 canvas with glass-to-glass latency under 60 ms.
 - **High-Efficiency 4WD Skid-Steer Mobility:** Solves the classic 4-wheel tire scrub problem by combining a dynamic outer-wheel torque boost with a smooth, continuous inner-wheel deceleration and active counter-rotation curve.
@@ -23,16 +23,16 @@ For detailed technical guides, hardware pinouts, and setup instructions, please 
 
 | Directory | Documentation Link | What It Contains |
 | :--- | :--- | :--- |
-| **pplication/** | [**Application Software Guide**](application/README.md) | **How to install software dependencies**, launch the unified server, configure the 2.4 GHz hotspot, use the web cockpit, and map USB joystick controls. |
-| **irmware/** | [**Firmware & Master Pinout Guide**](firmware/README.md) | **Complete soldered hardware pinout**, TB6612FNG motor driver connections, servo gimbal wiring, inter-ESP32 UART bridge, and power supply rules. |
-| **irmware/main_module/** | [**Main ESP32 Robotics Module**](firmware/main_module/README.md) | 4WD motor kinematics, BLE GATT server (PetVision-Robot), failsafe motion watchdog, and camera supervisor over UART2. |
-| **irmware/cam_module/** | [**ESP32-CAM Vision Module**](firmware/cam_module/README.md) | UDP live video engine, 10 FPS rate pacing, 17 dBm brownout protection, and Core 0 freeze watchdog. |
+| **`application/`** | [**Application Software Guide**](application/README.md) | **How to install software dependencies**, launch the unified server, configure the 2.4 GHz hotspot, use the web cockpit, and map USB joystick controls. |
+| **`firmware/`** | [**Firmware & Master Pinout Guide**](firmware/README.md) | **Complete soldered hardware pinout**, TB6612FNG motor driver connections, servo gimbal wiring, inter-ESP32 UART bridge, and power supply rules. |
+| **`firmware/main_module/`** | [**Main ESP32 Robotics Module**](firmware/main_module/README.md) | 4WD motor kinematics, BLE GATT server (`PetVision-Robot`), failsafe motion watchdog, and camera supervisor over UART2. |
+| **`firmware/cam_module/`** | [**ESP32-CAM Vision Module**](firmware/cam_module/README.md) | UDP live video engine, 10 FPS rate pacing, 17 dBm brownout protection, and Core 0 freeze watchdog. |
 
 ---
 
 ## 🏛️ System Architecture
 
-`
+```text
 +-----------------------------------------------------------------------------------+
 |                              PETLINK UNIFIED COCKPIT                              |
 |   Web Browser (Canvas Stream @ :8000)   <───>   FastAPI Unified Backend Server    |
@@ -50,7 +50,7 @@ For detailed technical guides, hardware pinouts, and setup instructions, please 
 | • 10 FPS Paced UDP Live Stream     |◄───────────►| • 2-Axis Pan/Tilt Gimbal       |
 | • Core 0 Freeze Watchdog           | (GPIO 16/17)| • Hardware Camera Supervisor   |
 +------------------------------------+             +--------------------------------+
-`
+```
 
 ---
 
@@ -59,8 +59,8 @@ For detailed technical guides, hardware pinouts, and setup instructions, please 
 1. **Install Software:** Follow the step-by-step setup in the [**Application Guide**](application/README.md).
 2. **Review Pinouts & Wire Hardware:** Follow the [**Firmware & Pinout Guide**](firmware/README.md).
 3. **Launch the System:**
-   `ash
+   ```bash
    cd application
    python launch.py
-   `
+   ```
    Open **http://localhost:8000** in your browser.
