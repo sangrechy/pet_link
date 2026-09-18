@@ -19,11 +19,30 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnSnapshot         = document.getElementById("btn-snapshot");
   const btnQuickLight       = document.getElementById("btn-quick-light");
   const quickLightText      = document.getElementById("quick-light-text");
+  const btnQuickFlip        = document.getElementById("btn-quick-flip");
+  const quickFlipText       = document.getElementById("quick-flip-text");
   const btnFullscreen       = document.getElementById("btn-fullscreen");
   const fpsVal              = document.getElementById("fps-val");
   const resBadge            = document.getElementById("res-badge");
   const latencyVal          = document.getElementById("latency-val");
   const hudRssiVal          = document.getElementById("hud-rssi-val");
+
+  // --- UI Elements: Dual-ESP Cross-Link Card ---
+  const crosslinkOverallBadge = document.getElementById("crosslink-overall-badge");
+  const crosslinkOverallText  = document.getElementById("crosslink-overall-text");
+  const nodeCamDot          = document.getElementById("node-cam-dot");
+  const nodeCamLink         = document.getElementById("node-cam-link");
+  const nodeCamIp           = document.getElementById("node-cam-ip");
+  const nodeCamStream       = document.getElementById("node-cam-stream");
+  const nodeCamOrient       = document.getElementById("node-cam-orient");
+  const bridgeBox           = document.getElementById("bridge-box");
+  const bridgePulseIndicator = document.getElementById("bridge-pulse-indicator");
+  const bridgeTimerText     = document.getElementById("bridge-timer-text");
+  const nodeMainDot         = document.getElementById("node-main-dot");
+  const nodeMainLink        = document.getElementById("node-main-link");
+  const nodeMainDrive       = document.getElementById("node-main-drive");
+  const nodeMainGimbal      = document.getElementById("node-main-gimbal");
+  const nodeMainWatchdog    = document.getElementById("node-main-watchdog");
 
   // --- UI Elements: Rover Motion ---
   const roverState          = document.getElementById("rover-state");
@@ -357,6 +376,16 @@ document.addEventListener("DOMContentLoaded", () => {
     lightToggle.dispatchEvent(new Event("change"));
   });
 
+  let isFlipped = false;
+  if (btnQuickFlip) {
+    btnQuickFlip.addEventListener("click", () => {
+      isFlipped = !isFlipped;
+      canvas.classList.toggle("flipped", isFlipped);
+      if (quickFlipText) quickFlipText.textContent = isFlipped ? "Flip: 180°" : "Flip: 0°";
+      fetch(`/api/camera/flip?val=${isFlipped ? 1 : 0}`).catch(() => {});
+    });
+  }
+
   const btnCamReboot = document.getElementById("btn-cam-reboot");
   if (btnCamReboot) {
     btnCamReboot.addEventListener("click", () => {
@@ -475,21 +504,82 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // ==========================================================================
-  // 7. Status Polling Worker (/api/robot/status & /api/status)
+  // 7. Status Polling Worker (/api/crosslink/status)
   // ==========================================================================
   async function pollStatus() {
     try {
-      const res = await fetch("/api/robot/status");
+      const res = await fetch("/api/crosslink/status");
       if (res.ok) {
         const data = await res.json();
 
-        // Robot Wireless BLE Connection
-        if (data.connected) {
-          robotStatusBadge.className = "status-pill online";
-          robotStatusText.textContent = `ROBOT: BLE (${data.device_name || "CONNECTED"})`;
-        } else {
-          robotStatusBadge.className = "status-pill offline";
-          robotStatusText.textContent = "ROBOT: DISCONNECTED";
+        // 1. Dual-ESP Mutual Cross-Link Card Updates
+        if (data.uart_bridge) {
+          const synced = data.uart_bridge.synced;
+          if (crosslinkOverallBadge) {
+            crosslinkOverallBadge.className = synced ? "crosslink-status-badge mono" : "crosslink-status-badge offline mono";
+          }
+          if (crosslinkOverallText) {
+            crosslinkOverallText.textContent = synced ? "SYNC ACTIVE (1.5s)" : "LINK DISCONNECTED";
+          }
+          if (bridgeTimerText) {
+            bridgeTimerText.textContent = synced ? (data.uart_bridge.last_heartbeat_s !== null ? `${data.uart_bridge.last_heartbeat_s}s PING` : "1.5s PING") : "TIMEOUT";
+          }
+        }
+
+        // Camera Node Box
+        if (data.camera) {
+          const camOn = data.camera.online;
+          if (nodeCamDot) nodeCamDot.className = camOn ? "node-state-dot online" : "node-state-dot";
+          if (nodeCamLink) nodeCamLink.textContent = camOn ? `UDP 5000 (${data.camera.rssi || -50} dBm)` : "OFFLINE";
+          if (nodeCamIp) nodeCamIp.textContent = data.camera.ip || "0.0.0.0";
+          if (nodeCamStream) nodeCamStream.textContent = camOn ? `${data.camera.fps} FPS (Anti-Freeze)` : "IDLE";
+          if (nodeCamOrient) nodeCamOrient.textContent = data.camera.vflip ? "UPRIGHT (180°)" : "NORMAL (0°)";
+
+          // Header camera badge
+          if (camOn) {
+            camStatusBadge.className = "status-pill online";
+            camStatusText.textContent = `CAM: ${data.camera.ip || "LIVE"}`;
+          } else {
+            camStatusBadge.className = "status-pill offline";
+            camStatusText.textContent = "CAM: OFFLINE";
+          }
+        }
+
+        // Main ESP32 Node Box
+        if (data.main_esp) {
+          const mainOn = data.main_esp.online;
+          if (nodeMainDot) nodeMainDot.className = mainOn ? "node-state-dot online" : "node-state-dot";
+          if (nodeMainLink) nodeMainLink.textContent = data.main_esp.ble_connected ? `BLE (${data.main_esp.device_name || "CONNECTED"})` : (mainOn ? "UART RELAY" : "DISCONNECTED");
+          if (nodeMainDrive) nodeMainDrive.textContent = `Speed: ${data.main_esp.car_speed} (${data.main_esp.is_moving ? "MOVING" : "STOPPED"})`;
+          if (nodeMainGimbal) nodeMainGimbal.textContent = `Pan: ${data.main_esp.pan}° | Tilt: ${data.main_esp.tilt}°`;
+
+          // Header robot badge
+          if (data.main_esp.ble_connected) {
+            robotStatusBadge.className = "status-pill online";
+            robotStatusText.textContent = `ROBOT: BLE (${data.main_esp.device_name || "CONNECTED"})`;
+          } else if (mainOn) {
+            robotStatusBadge.className = "status-pill online";
+            robotStatusText.textContent = "ROBOT: VIA CAM UART";
+          } else {
+            robotStatusBadge.className = "status-pill offline";
+            robotStatusText.textContent = "ROBOT: DISCONNECTED";
+          }
+
+          // Sync sliders/display
+          if (data.main_esp.pan !== undefined && data.main_esp.pan !== currentPan) {
+            currentPan = data.main_esp.pan;
+            panDisplay.textContent = `PAN: ${currentPan}°`;
+          }
+          if (data.main_esp.tilt !== undefined && data.main_esp.tilt !== currentTilt) {
+            currentTilt = data.main_esp.tilt;
+            tiltDisplay.textContent = `TILT: ${currentTilt}°`;
+          }
+          if (data.main_esp.car_speed !== undefined && data.main_esp.car_speed !== motorSpeed) {
+            motorSpeed = data.main_esp.car_speed;
+            speedSlider.value = motorSpeed;
+            const pct = Math.round((motorSpeed / 255) * 100);
+            speedVal.textContent = `${motorSpeed} (${pct}%)`;
+          }
         }
 
         // Joystick
@@ -500,31 +590,10 @@ document.addEventListener("DOMContentLoaded", () => {
           joystickStatusBadge.className = "status-pill offline";
           joystickStatusText.textContent = "NO JOYSTICK";
         }
-
-        // Sync angles & speeds if changed by joystick
-        if (data.pan !== undefined && data.pan !== currentPan) {
-          currentPan = data.pan;
-          panDisplay.textContent = `PAN: ${currentPan}°`;
-        }
-        if (data.tilt !== undefined && data.tilt !== currentTilt) {
-          currentTilt = data.tilt;
-          tiltDisplay.textContent = `TILT: ${currentTilt}°`;
-        }
-        if (data.car_speed !== undefined && data.car_speed !== motorSpeed) {
-          motorSpeed = data.car_speed;
-          speedSlider.value = motorSpeed;
-          const pct = Math.round((motorSpeed / 255) * 100);
-          speedVal.textContent = `${motorSpeed} (${pct}%)`;
-        }
-        if (data.camera_speed !== undefined && data.camera_speed !== cameraStep) {
-          cameraStep = data.camera_speed;
-          stepSlider.value = cameraStep;
-          stepVal.textContent = `${cameraStep}° per step`;
-        }
       }
     } catch (e) {}
 
-    setTimeout(pollStatus, 1000);
+    setTimeout(pollStatus, 1200);
   }
 
   // Initialize WebSockets and Polling

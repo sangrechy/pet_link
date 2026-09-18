@@ -80,8 +80,14 @@ IPAddress default_target_ip(192, 168, 137, 1);
 int current_light_value = 0;
 int current_framesize   = FRAMESIZE_VGA;
 int current_quality     = 20;
+int current_vflip       = 1; // Default 1 (mounted upside down)
+int current_hmirror     = 1; // Default 1 (horizontal mirror for upright inversion)
 volatile bool streaming_enabled = true;
 uint16_t global_frame_counter = 0;
+
+// Mutual Supervision & UART Link State
+volatile unsigned long last_main_ping_recv_time = 0;
+volatile bool main_esp_online = false;
 
 // Reconnection & Watchdog Timers
 unsigned long last_wifi_check = 0;
@@ -176,8 +182,8 @@ void udp_stream_task(void *pvParameters) {
           uint32_t server_ts;
           memcpy(&server_ts, cmd_buf + 4, 4);
 
-          // Build PONG response (16 bytes)
-          uint8_t pong_resp[16];
+          // Build PONG response (18 bytes) with mutual supervision telemetry
+          uint8_t pong_resp[18];
           memcpy(pong_resp, "PONG", 4);
           memcpy(pong_resp + 4, &server_ts, 4); // Echoed server timestamp
 
@@ -188,6 +194,8 @@ void udp_stream_task(void *pvParameters) {
           pong_resp[13] = (uint8_t)current_light_value;
           pong_resp[14] = (uint8_t)current_framesize;
           pong_resp[15] = (uint8_t)current_quality;
+          pong_resp[16] = (uint8_t)(main_esp_online ? 1 : 0);
+          pong_resp[17] = (uint8_t)current_vflip;
 
           sendto(udp_sock, pong_resp, sizeof(pong_resp), 0,
                  (struct sockaddr *)&from_addr, from_len);
@@ -220,6 +228,26 @@ void udp_stream_task(void *pvParameters) {
               s->set_quality(s, val);
               current_quality = val;
             }
+          }
+        }
+        // Orientation flip command: b"P" + 1-byte (0 or 1)
+        else if (cmd_buf[0] == 'P' && len >= 2) {
+          int val = cmd_buf[1] ? 1 : 0;
+          current_vflip = val;
+          current_hmirror = val;
+          sensor_t *s = esp_camera_sensor_get();
+          if (s != NULL) {
+            s->set_vflip(s, current_vflip);
+            s->set_hmirror(s, current_hmirror);
+          }
+        }
+        // Vice-versa command forwarding from UDP to Main ESP32: b"C:" + command string
+        else if (len >= 3 && cmd_buf[0] == 'C' && cmd_buf[1] == ':') {
+          String fwd_cmd = "";
+          for (int i = 2; i < len; i++) fwd_cmd += (char)cmd_buf[i];
+          fwd_cmd.trim();
+          if (fwd_cmd.length() > 0) {
+            Serial.println(fwd_cmd); // Write directly to Main ESP32 across UART2!
           }
         }
       }
@@ -268,7 +296,7 @@ void udp_stream_task(void *pvParameters) {
       if (res < 0) {
         vTaskDelay(pdMS_TO_TICKS(1));
       } else {
-        delayMicroseconds(60); // 60µs hardware pacing for zero lwIP TX buffer drops
+        delayMicroseconds(700); // 700µs hardware pacing for zero lwIP TX buffer drops
       }
     }
 
@@ -349,8 +377,8 @@ esp_err_t init_camera() {
     s->set_wpc(s, 1);
     s->set_raw_gma(s, 1);
     s->set_lenc(s, 1);
-    s->set_hmirror(s, 0);
-    s->set_vflip(s, 0);
+    s->set_hmirror(s, current_hmirror);
+    s->set_vflip(s, current_vflip);
     s->set_dcw(s, 1);
   }
 
@@ -408,6 +436,32 @@ void handle_serial_commands() {
         }
       }
     }
+    // Camera Orientation Flip: FLIP [0|1], VFLIP [0|1], HMIRROR [0|1]
+    else if (cmd.startsWith("FLIP") || cmd.startsWith("flip")) {
+      int val = (cmd.length() > 4) ? cmd.substring(4).toInt() : !current_vflip;
+      current_vflip = val ? 1 : 0;
+      current_hmirror = val ? 1 : 0;
+      sensor_t *s = esp_camera_sensor_get();
+      if (s != NULL) {
+        s->set_vflip(s, current_vflip);
+        s->set_hmirror(s, current_hmirror);
+      }
+      Serial.printf("CAM_ACK:FLIP=%d\n", current_vflip);
+    }
+    else if (cmd.startsWith("VFLIP") || cmd.startsWith("vflip")) {
+      int val = (cmd.length() > 5) ? cmd.substring(5).toInt() : !current_vflip;
+      current_vflip = val ? 1 : 0;
+      sensor_t *s = esp_camera_sensor_get();
+      if (s != NULL) s->set_vflip(s, current_vflip);
+      Serial.printf("CAM_ACK:VFLIP=%d\n", current_vflip);
+    }
+    else if (cmd.startsWith("HMIRROR") || cmd.startsWith("hmirror")) {
+      int val = (cmd.length() > 7) ? cmd.substring(7).toInt() : !current_hmirror;
+      current_hmirror = val ? 1 : 0;
+      sensor_t *s = esp_camera_sensor_get();
+      if (s != NULL) s->set_hmirror(s, current_hmirror);
+      Serial.printf("CAM_ACK:HMIRROR=%d\n", current_hmirror);
+    }
     // Query Camera IP: GET_IP
     else if (cmd.equalsIgnoreCase("GET_IP")) {
       if (WiFi.status() == WL_CONNECTED) {
@@ -416,13 +470,21 @@ void handle_serial_commands() {
         Serial.println("CAM_IP:DISCONNECTED");
       }
     }
-    // Heartbeat PING
-    else if (cmd.equalsIgnoreCase("PING")) {
-      Serial.printf("CAM_PONG:IP=%s,RSSI=%d,LIGHT=%d,RES=%d\n",
+    // Mutual Supervision Heartbeat: PING or PING_CAM
+    else if (cmd.equalsIgnoreCase("PING") || cmd.equalsIgnoreCase("PING_CAM")) {
+      last_main_ping_recv_time = millis();
+      main_esp_online = true;
+      Serial.printf("CAM_PONG:IP=%s,RSSI=%d,LIGHT=%d,RES=%d,FLIP=%d,STATE=OK\n",
         WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "0.0.0.0",
         (int)WiFi.RSSI(),
         current_light_value,
-        current_framesize);
+        current_framesize,
+        current_vflip);
+    }
+    // Main ESP Pong acknowledgment
+    else if (cmd.startsWith("MAIN_PONG") || cmd.startsWith("MAIN_HEARTBEAT")) {
+      last_main_ping_recv_time = millis();
+      main_esp_online = true;
     }
     // Reboot trigger
     else if (cmd.equalsIgnoreCase("REBOOT")) {
@@ -444,15 +506,24 @@ void core0_supervisor_task(void *pvParameters) {
 
     unsigned long now = millis();
 
-    // 2. Periodic Heartbeat to Main ESP32 (every 1.0s)
-    if (now - last_uart_sync_time >= 1000) {
+    // 2. Periodic Mutual Heartbeat to Main ESP32 (every 1.5s)
+    if (now - last_uart_sync_time >= 1500) {
       last_uart_sync_time = now;
+      Serial.println("PING_MAIN");
       if (WiFi.status() == WL_CONNECTED) {
-        Serial.printf("CAM_HEARTBEAT:IP=%s,RSSI=%d,FPS=10\n", WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
+        Serial.printf("CAM_HEARTBEAT:IP=%s,RSSI=%d,FPS=10,MAIN=%d\n",
+          WiFi.localIP().toString().c_str(),
+          (int)WiFi.RSSI(),
+          main_esp_online ? 1 : 0);
         Serial.printf("CAM_IP:%s\n", WiFi.localIP().toString().c_str());
       } else {
         Serial.println("CAM_HEARTBEAT:WIFI=DISCONNECTED");
       }
+    }
+
+    // Check if Main ESP32 link dropped (>4.5s)
+    if (main_esp_online && (now >= last_main_ping_recv_time) && (now - last_main_ping_recv_time > 4500)) {
+      main_esp_online = false;
     }
 
     // 3. Camera Sensor DMA Freeze Watchdog:

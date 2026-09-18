@@ -70,8 +70,10 @@ bool oldDeviceConnected = false;
 
 String last_known_cam_ip = "";
 unsigned long last_cam_heartbeat_time = 0;
+bool cam_online = false;
 bool cam_has_communicated = false;
 unsigned long last_cam_reboot_attempt = 0;
+unsigned long last_ping_cam_time = 0;
 
 // ============================================================================
 // LEDC PWM Configuration
@@ -303,9 +305,24 @@ void process_command(const String& cmd_str) {
       pTxCharacteristic->notify();
     }
     return;
+  } else if (trimmed.equalsIgnoreCase("GET_CROSSLINK")) {
+    String cl_msg = String("CROSSLINK:CAM=") + (cam_online ? "1" : "0") +
+                    ",IP=" + (last_known_cam_ip.length() > 0 ? last_known_cam_ip : "0.0.0.0") +
+                    ",MAIN=1,BLE=" + (deviceConnected ? "1" : "0") + "\n";
+    Serial.print(cl_msg);
+    if (deviceConnected && pTxCharacteristic) {
+      pTxCharacteristic->setValue((uint8_t*)cl_msg.c_str(), cl_msg.length());
+      pTxCharacteristic->notify();
+    }
+    return;
   } else if (trimmed.equalsIgnoreCase("CAM_REBOOT")) {
     Serial2.println("REBOOT");
     Serial.println("[SUPERVISOR] Sent REBOOT command to Camera over UART2.");
+    return;
+  } else if (trimmed.startsWith("FLIP") || trimmed.startsWith("flip") ||
+             trimmed.startsWith("VFLIP") || trimmed.startsWith("vflip") ||
+             trimmed.startsWith("HMIRROR") || trimmed.startsWith("hmirror")) {
+    Serial2.println(trimmed);
     return;
   } else if (trimmed.startsWith("CAM_") || trimmed.startsWith("cam_")) {
     Serial2.println(trimmed.substring(4));
@@ -518,45 +535,89 @@ void setup() {
 // Loop
 // ============================================================================
 void loop() {
+  unsigned long now = millis();
+
   // 1. Process Serial Commands (USB Backup)
   if (Serial.available() > 0) {
     String cmd = Serial.readStringUntil('\n');
     process_command(cmd);
   }
 
-  // 2. Process Camera Messages over Hardware UART2
+  // 2. Periodic Mutual Heartbeat PING to Camera over UART2 (every 1.5s)
+  if (now - last_ping_cam_time >= 1500) {
+    last_ping_cam_time = now;
+    Serial2.println("PING_CAM");
+  }
+
+  // 3. Process Camera Messages over Hardware UART2 Link
   while (Serial2.available() > 0) {
     String cam_msg = Serial2.readStringUntil('\n');
     cam_msg.trim();
     if (cam_msg.length() == 0) continue;
 
     last_cam_heartbeat_time = millis();
+    cam_online = true;
     cam_has_communicated = true;
 
-    if (cam_msg.startsWith("CAM_IP:")) {
-      last_known_cam_ip = cam_msg.substring(7);
-      Serial.printf("[SYNC] Camera IP: %s\n", last_known_cam_ip.c_str());
-      if (deviceConnected && pTxCharacteristic) {
-        String notif = "CAM_IP:" + last_known_cam_ip + "\n";
-        pTxCharacteristic->setValue((uint8_t*)notif.c_str(), notif.length());
-        pTxCharacteristic->notify();
+    if (cam_msg == "PING_MAIN" || cam_msg.startsWith("PING_MAIN")) {
+      Serial2.printf("MAIN_PONG:STATE=OK,BLE=%d,TIME=%lu\n", deviceConnected ? 1 : 0, millis());
+    } else if (cam_msg.startsWith("MAIN_PONG")) {
+      // acknowledged
+    } else if (cam_msg.startsWith("CAM_IP:")) {
+      String new_ip = cam_msg.substring(7);
+      if (new_ip.length() > 0 && new_ip != "DISCONNECTED" && new_ip != "0.0.0.0") {
+        if (new_ip != last_known_cam_ip) {
+          last_known_cam_ip = new_ip;
+          Serial.printf("[SYNC] Camera IP: %s\n", last_known_cam_ip.c_str());
+          if (deviceConnected && pTxCharacteristic) {
+            String notif = "CAM_IP:" + last_known_cam_ip + "\n";
+            pTxCharacteristic->setValue((uint8_t*)notif.c_str(), notif.length());
+            pTxCharacteristic->notify();
+          }
+        }
       }
+    } else if (cam_msg.startsWith("CMD ") || cam_msg.startsWith("cmd ")) {
+      // Vice-Versa: Forwarded motion command from Camera (via Wi-Fi/UDP) to execute on Main ESP32!
+      process_command(cam_msg.substring(4));
     } else {
       Serial.printf("[CAM_RAW] %s\n", cam_msg.c_str());
     }
   }
 
-  unsigned long now = millis();
+  now = millis();
 
-  // 3. Camera Freeze Watchdog Supervisor
-  // If camera was once alive and stops responding for >8 seconds, trigger automatic unfreeze reboot
-  if (cam_has_communicated && (now - last_cam_heartbeat_time > 8000) && (now - last_cam_reboot_attempt > 10000)) {
+  // 4. Camera Heartbeat Offline Detection (>4.5s)
+  if (cam_online && (now >= last_cam_heartbeat_time) && (now - last_cam_heartbeat_time > 4500)) {
+    cam_online = false;
+    Serial.println("[SUPERVISOR] Camera heartbeat dropped (>4.5s). Marked offline.");
+    if (deviceConnected && pTxCharacteristic) {
+      String notif = "CAM_STATUS:OFFLINE\n";
+      pTxCharacteristic->setValue((uint8_t*)notif.c_str(), notif.length());
+      pTxCharacteristic->notify();
+    }
+  }
+
+  // 5. Camera Freeze Watchdog Supervisor (>8s silence after previously alive)
+  if (cam_has_communicated && !cam_online && (now >= last_cam_heartbeat_time) && (now - last_cam_heartbeat_time > 8000) && (now - last_cam_reboot_attempt > 10000)) {
     last_cam_reboot_attempt = now;
     Serial.println("[SUPERVISOR] Camera silence detected (>8s). Pulsing REBOOT command over UART2...");
     Serial2.println("REBOOT");
     if (deviceConnected && pTxCharacteristic) {
       String notif = "CAM_STATUS:FROZEN_REBOOTING\n";
       pTxCharacteristic->setValue((uint8_t*)notif.c_str(), notif.length());
+      pTxCharacteristic->notify();
+    }
+  }
+
+  // 6. Periodic Crosslink Telemetry to BLE (every 2.0s)
+  static unsigned long last_crosslink_notif = 0;
+  if (deviceConnected && (now - last_crosslink_notif >= 2000)) {
+    last_crosslink_notif = now;
+    String cl_msg = String("CROSSLINK:CAM=") + (cam_online ? "1" : "0") +
+                    ",IP=" + (last_known_cam_ip.length() > 0 ? last_known_cam_ip : "0.0.0.0") +
+                    ",MAIN=1,BLE=1\n";
+    if (pTxCharacteristic) {
+      pTxCharacteristic->setValue((uint8_t*)cl_msg.c_str(), cl_msg.length());
       pTxCharacteristic->notify();
     }
   }

@@ -77,6 +77,8 @@ class CamState:
     clock_offset_ms: float = 0.0
     last_pong_time: float = 0.0
     current_resolution: int = 8 # VGA default
+    main_esp_online_via_cam: bool = False
+    vflip: bool = True
 
 cam_state = CamState()
 
@@ -124,6 +126,48 @@ def udp_receiver_worker():
     fps_counter = 0
     fps_timer = time.time()
 
+    def emit_frame(raw_parts: dict, num_parts: int, cap_time: int, is_partial: bool):
+        nonlocal fps_counter
+        full_frame = bytearray()
+        for pid in range(num_parts):
+            part = raw_parts.get(pid)
+            if part:
+                full_frame.extend(part)
+
+        if len(full_frame) < 150:
+            return
+
+        # Ensure JPEG ends with EOI (FF D9) so browser decodes partial or complete scanlines
+        if not full_frame.endswith(b"\xff\xd9"):
+            full_frame.extend(b"\xff\xd9")
+
+        frame_bytes = bytes(full_frame)
+        with latest_frame_lock:
+            latest_frame = frame_bytes
+
+        cam_state.frames_received += 1
+        cam_state.last_frame_time = time.time()
+        cam_state.is_connected = True
+        fps_counter += 1
+
+        # Glass-to-glass latency
+        now_ms = get_now_ms()
+        transit = max(1.0, float(now_ms - cap_time - cam_state.clock_offset_ms))
+        cam_state.frame_transit_ms = round(transit, 1)
+        cam_state.total_latency_ms = round(transit + (cam_state.rtt_ms / 2.0), 1)
+
+        # Broadcast to connected WebSocket clients with 10-byte telemetry header
+        # Flags byte (byte 9): 1 = partial live frame, 0 = complete frame
+        telemetry_hdr = struct.pack(
+            "<4sHHbB",
+            b"PV01",
+            int(min(65535, max(0, cam_state.total_latency_ms))),
+            int(min(65535, max(0, cam_state.rtt_ms))),
+            int(cam_state.rssi),
+            1 if is_partial else 0
+        )
+        dispatch_frame(bytes(telemetry_hdr + frame_bytes))
+
     while True:
         try:
             packet, addr = sock.recvfrom(2048)
@@ -133,10 +177,10 @@ def udp_receiver_worker():
             time.sleep(0.05)
             continue
 
-        # 1. PONG Heartbeat packet (16 bytes)
-        if len(packet) == 16 and packet.startswith(b"PONG"):
+        # 1. PONG Heartbeat packet (16 to 18 bytes)
+        if len(packet) >= 16 and packet.startswith(b"PONG"):
             try:
-                _, s_ts, esp_ts, rssi_val, light_val, fs_val, q_val = struct.unpack("<4sIIbBBB", packet)
+                _, s_ts, esp_ts, rssi_val, light_val, fs_val, q_val = struct.unpack("<4sIIbBBB", packet[:16])
                 now_ms = get_now_ms()
                 rtt = max(1.0, float((now_ms - s_ts) & 0xFFFFFFFF))
                 cam_state.rtt_ms = round(rtt, 1)
@@ -144,6 +188,10 @@ def udp_receiver_worker():
                 cam_state.rssi = int(rssi_val)
                 cam_state.light_level = int(light_val)
                 cam_state.current_resolution = int(fs_val)
+                if len(packet) >= 17:
+                    cam_state.main_esp_online_via_cam = bool(packet[16])
+                if len(packet) >= 18:
+                    cam_state.vflip = bool(packet[17])
                 cam_state.last_pong_time = time.time()
                 cam_state.is_connected = True
                 if cam_state.cam_ip != addr[0]:
@@ -170,7 +218,11 @@ def udp_receiver_worker():
 
         if current_frame_id is None or is_newer:
             if current_frame_id is not None and expected_parts > 0 and len(parts_map) < expected_parts:
-                cam_state.frames_dropped += 1
+                # Resilient Video Stream: User accepts partial/broken frames as long as it never freezes
+                if 0 in parts_map and len(parts_map) >= max(1, expected_parts // 3):
+                    emit_frame(parts_map, expected_parts, current_capture_time, is_partial=True)
+                else:
+                    cam_state.frames_dropped += 1
             current_frame_id = frame_id
             parts_map = {part_id: chunk}
             expected_parts = total_parts
@@ -179,40 +231,7 @@ def udp_receiver_worker():
             parts_map[part_id] = chunk
 
         if expected_parts > 0 and len(parts_map) == expected_parts:
-            # Reassemble complete frame
-            full_frame = bytearray()
-            for pid in range(expected_parts):
-                part = parts_map.get(pid)
-                if part:
-                    full_frame.extend(part)
-
-            if len(full_frame) > 0:
-                with latest_frame_lock:
-                    latest_frame = bytes(full_frame)
-
-                cam_state.frames_received += 1
-                cam_state.last_frame_time = time.time()
-                cam_state.is_connected = True
-                fps_counter += 1
-
-                # Glass-to-glass latency
-                now_ms = get_now_ms()
-                transit = max(1.0, (now_ms - current_capture_time - cam_state.clock_offset_ms))
-                cam_state.frame_transit_ms = round(transit, 1)
-                cam_state.total_latency_ms = round(transit + (cam_state.rtt_ms / 2.0), 1)
-
-                # Broadcast to connected WebSocket clients with 10-byte telemetry header
-                telemetry_hdr = struct.pack(
-                    "<4sHHbB",
-                    b"PV01",
-                    int(min(65535, max(0, cam_state.total_latency_ms))),
-                    int(min(65535, max(0, cam_state.rtt_ms))),
-                    int(cam_state.rssi),
-                    0
-                )
-                payload = bytes(telemetry_hdr + latest_frame)
-                dispatch_frame(payload)
-
+            emit_frame(parts_map, expected_parts, current_capture_time, is_partial=False)
             current_frame_id = None
             parts_map.clear()
             expected_parts = 0
@@ -286,6 +305,10 @@ class RobotBLEManager:
         self.joystick_connected: bool = False
         self.joystick_name: str = "None"
 
+        # Inter-ESP Crosslink Telemetry
+        self.last_cam_sync_time: float = 0.0
+        self.cam_online_via_main: bool = False
+
         # Thread-safe queue for fast non-blocking command dispatch
         self.cmd_queue = queue.Queue(maxsize=100)
         self.loop: Optional[asyncio.AbstractEventLoop] = None
@@ -326,12 +349,26 @@ class RobotBLEManager:
                     def on_notification(sender, data: bytearray):
                         try:
                             msg = data.decode("utf-8", errors="replace").strip()
-                            logger.info(f"[BLE_NOTIF] {msg}")
-                            if msg.startswith("CAM_IP:"):
+                            if msg.startswith("CROSSLINK:"):
+                                self.last_cam_sync_time = time.time()
+                                try:
+                                    pairs = dict(item.split("=") for item in msg.split(":", 1)[1].split(",") if "=" in item)
+                                    self.cam_online_via_main = (pairs.get("CAM") == "1")
+                                    ip = pairs.get("IP", "")
+                                    if ip and ip not in ("0.0.0.0", "DISCONNECTED"):
+                                        cam_state.cam_ip = ip
+                                except Exception:
+                                    pass
+                            elif msg.startswith("CAM_IP:"):
+                                self.last_cam_sync_time = time.time()
                                 new_ip = msg.split(":", 1)[1].strip()
                                 if new_ip and new_ip != "DISCONNECTED" and new_ip != "0.0.0.0":
                                     cam_state.cam_ip = new_ip
+                                    self.cam_online_via_main = True
                                     logger.info(f"[CAMERA_SYNC] Auto-discovered IP via Main ESP32 UART2 bridge: {new_ip}")
+                            elif msg.startswith("CAM_STATUS:"):
+                                if "OFFLINE" in msg:
+                                    self.cam_online_via_main = False
                         except Exception as notif_e:
                             logger.warning(f"[BLE_NOTIF] Parse error: {notif_e}")
 
@@ -834,6 +871,68 @@ async def get_robot_status():
         "tilt": robot_mgr.current_tilt,
         "last_cmd": robot_mgr.last_cmd,
         "is_moving": robot_mgr.is_moving,
+        "joystick": {
+            "connected": robot_mgr.joystick_connected,
+            "name": robot_mgr.joystick_name
+        }
+    }
+
+@app.get("/api/camera/flip")
+async def toggle_camera_flip(val: Optional[int] = Query(None)):
+    target = (1 if val else 0) if val is not None else (0 if cam_state.vflip else 1)
+    cam_state.vflip = bool(target)
+    send_cam_udp_packet(b"P" + bytes([target]))
+    robot_mgr.send_command(f"FLIP {target}")
+    logger.info(f"[CAMERA] Orientation flip set to: {target}")
+    return {"status": "ok", "vflip": target}
+
+@app.get("/api/crosslink/status")
+async def get_crosslink_status():
+    is_live_udp = (time.time() - cam_state.last_frame_time) < 3.0 or (time.time() - cam_state.last_pong_time) < 3.0
+    cam_state.is_connected = is_live_udp
+    now = time.time()
+
+    cam_online = is_live_udp or robot_mgr.cam_online_via_main
+    main_online = robot_mgr.is_connected or cam_state.main_esp_online_via_cam
+    uart_synced = cam_state.main_esp_online_via_cam or (now - robot_mgr.last_cam_sync_time < 4.5)
+
+    last_hb_diff = None
+    if cam_state.last_pong_time > 0 or robot_mgr.last_cam_sync_time > 0:
+        last_hb_diff = round(now - max(cam_state.last_pong_time, robot_mgr.last_cam_sync_time), 1)
+
+    return {
+        "status": "ok",
+        "timestamp": round(now, 2),
+        "camera": {
+            "online": cam_online,
+            "ip": cam_state.cam_ip,
+            "fps": round(cam_state.fps, 1),
+            "latency_ms": cam_state.total_latency_ms,
+            "rtt_ms": cam_state.rtt_ms,
+            "rssi": cam_state.rssi,
+            "frames_received": cam_state.frames_received,
+            "frames_dropped": cam_state.frames_dropped,
+            "vflip": cam_state.vflip,
+            "light": cam_state.light_level,
+            "resolution": cam_state.current_resolution
+        },
+        "main_esp": {
+            "online": main_online,
+            "ble_connected": robot_mgr.is_connected,
+            "device_name": robot_mgr.device_name,
+            "car_speed": robot_mgr.car_speed,
+            "camera_speed": robot_mgr.camera_speed,
+            "pan": robot_mgr.current_pan,
+            "tilt": robot_mgr.current_tilt,
+            "is_moving": robot_mgr.is_moving,
+            "last_cmd": robot_mgr.last_cmd
+        },
+        "uart_bridge": {
+            "synced": uart_synced,
+            "cam_sees_main": cam_state.main_esp_online_via_cam,
+            "main_sees_cam": robot_mgr.cam_online_via_main,
+            "last_heartbeat_s": last_hb_diff
+        },
         "joystick": {
             "connected": robot_mgr.joystick_connected,
             "name": robot_mgr.joystick_name

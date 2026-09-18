@@ -93,6 +93,12 @@
                 </svg>
                 <span id="quick-light-text">Light OFF</span>
               </button>
+              <button id="btn-quick-flip" class="hud-btn" title="Toggle 180° Flip (Upright / Inverted)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                </svg>
+                <span id="quick-flip-text">Flip 180°</span>
+              </button>
             </div>
             <div class="hud-actions-right">
               <button id="btn-fullscreen" class="hud-btn" title="Toggle Fullscreen">
@@ -101,6 +107,72 @@
                 </svg>
                 <span>Fullscreen</span>
               </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dual-ESP Mutual Cross-Link & Heartbeat Monitor Card -->
+        <div class="card crosslink-card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+              </svg>
+              <h2>Dual-ESP Cross-Link & Heartbeat Monitor</h2>
+            </div>
+            <div class="crosslink-status-badge mono" id="crosslink-overall-badge">
+              <span class="pulse-ring"></span>
+              <span id="crosslink-overall-text">SYNC ACTIVE (1.5s)</span>
+            </div>
+          </div>
+
+          <div class="crosslink-grid">
+            <!-- Node 1: ESP32-CAM -->
+            <div class="node-box" id="node-cam-box">
+              <div class="node-header">
+                <span class="node-icon">📷</span>
+                <div class="node-title-group">
+                  <div class="node-name">ESP32-CAM</div>
+                  <div class="node-role mono">Vision & DMA Engine</div>
+                </div>
+                <span class="node-state-dot online" id="node-cam-dot"></span>
+              </div>
+              <div class="node-stats mono">
+                <div class="stat-row"><span>LINK:</span><span id="node-cam-link">UDP 5000</span></div>
+                <div class="stat-row"><span>IP:</span><span id="node-cam-ip">192.168.137.75</span></div>
+                <div class="stat-row"><span>STREAM:</span><span id="node-cam-stream">Live (Anti-Freeze)</span></div>
+                <div class="stat-row"><span>ORIENTATION:</span><span id="node-cam-orient">UPRIGHT (180°)</span></div>
+              </div>
+            </div>
+
+            <!-- Inter-ESP UART Bridge -->
+            <div class="bridge-box" id="bridge-box">
+              <div class="bridge-arrow">⇄</div>
+              <div class="bridge-label mono">UART2 BRIDGE</div>
+              <div class="bridge-pins mono">RX2:16 ⇄ TX2:17</div>
+              <div class="bridge-pulse" id="bridge-pulse-indicator" title="Hardware heartbeat exchanged every 1.5s">
+                <span class="bridge-led active"></span>
+                <span class="bridge-timer mono" id="bridge-timer-text">1.5s PING</span>
+              </div>
+            </div>
+
+            <!-- Node 2: Main ESP32 -->
+            <div class="node-box" id="node-main-box">
+              <div class="node-header">
+                <span class="node-icon">🤖</span>
+                <div class="node-title-group">
+                  <div class="node-name">Main ESP32</div>
+                  <div class="node-role mono">Kinematics & Servos</div>
+                </div>
+                <span class="node-state-dot online" id="node-main-dot"></span>
+              </div>
+              <div class="node-stats mono">
+                <div class="stat-row"><span>LINK:</span><span id="node-main-link">BLE (Active)</span></div>
+                <div class="stat-row"><span>DRIVE:</span><span id="node-main-drive">4WD Skid-Steer</span></div>
+                <div class="stat-row"><span>GIMBAL:</span><span id="node-main-gimbal">Pan 90° | Tilt 90°</span></div>
+                <div class="stat-row"><span>WATCHDOG:</span><span id="node-main-watchdog" style="color: var(--accent-emerald);">ARMED (6s Auto-Fix)</span></div>
+              </div>
             </div>
           </div>
         </div>
