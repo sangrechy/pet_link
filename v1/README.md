@@ -1,12 +1,14 @@
-# pet_link (v1) 🐾🤖
+# project_pet_link (v1) 🐾🤖
 
-**pet_link v1** is a high-performance, untethered robotics cockpit and live vision streaming system powered by dual ESP32 microcontrollers, a unified Python backend, and an interactive browser dashboard.
+[![GitHub Repository](https://img.shields.io/badge/GitHub-project__pet__link-181717?style=flat&logo=github)](https://github.com/sangrechy/project_pet_link)
+
+**project_pet_link v1** is a high-performance, untethered robotics cockpit and live vision streaming system powered by dual ESP32 microcontrollers, a unified Python backend, and an interactive browser dashboard.
 
 ---
 
-## 🌟 What is pet_link v1?
+## 🌟 What is project_pet_link v1?
 
-`pet_link v1` bridges low-latency computer vision, agile 4WD robotics mobility, and precision camera tracking into a single unified platform:
+`project_pet_link v1` bridges low-latency computer vision, agile 4WD robotics mobility, and precision camera tracking into a single unified platform:
 
 - **Live Video Streaming:** Zero-overhead UDP live streaming (Port 5000) from an ESP32-CAM directly to an HTML5 canvas with glass-to-glass latency under 60 ms.
 - **High-Efficiency 4WD Skid-Steer Mobility:** Solves the classic 4-wheel tire scrub problem by combining a dynamic outer-wheel torque boost with a smooth, continuous inner-wheel deceleration and active counter-rotation curve.
@@ -34,7 +36,7 @@
 
 ```text
 +-----------------------------------------------------------------------------------+
-|                              PETLINK UNIFIED COCKPIT                              |
+|                           PROJECT_PET_LINK UNIFIED COCKPIT                        |
 |   Web Browser (Canvas Stream @ :8000)   <───>   FastAPI Unified Backend Server    |
 |   USB Gamepad / Joystick (Pygame 60Hz)  ───►    (v1/application/server.py)        |
 +-----------------------------------------------------------------------------------+

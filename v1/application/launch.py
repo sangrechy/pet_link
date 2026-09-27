@@ -1,5 +1,5 @@
 """
-PetVision Unified Server & Hotspot Session Launcher
+project_pet_link Unified Server & Hotspot Session Launcher
 """
 
 import sys
@@ -13,7 +13,7 @@ logger = logging.getLogger("petvision-launcher")
 
 def main():
     print("================================================================")
-    print("           PETVISION ROBOTICS VISION SERVER                     ")
+    print("          PROJECT_PET_LINK ROBOTICS VISION SERVER               ")
     print("================================================================")
     
     hotspot_mgr = HotspotSessionManager(session_ssid="test_1", session_pass="12345678")

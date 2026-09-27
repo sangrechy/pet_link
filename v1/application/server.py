@@ -40,7 +40,7 @@ import pygame
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("petvision-unified-server")
 
-app = FastAPI(title="PetVision Unified Robotics & Vision Server", version="4.0.0")
+app = FastAPI(title="project_pet_link Unified Robotics & Vision Server", version="4.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -485,7 +485,7 @@ class RobotBLEManager:
                         devices = await BleakScanner.discover(timeout=3.0, return_adv=True)
                         for addr, (d, adv) in devices.items():
                             name = (d.name or adv.local_name or "").lower()
-                            if "petvision" in name or "robot" in name:
+                            if "petvision" in name or "robot" in name or "pet_link" in name or "project_pet_link" in name:
                                 device = d
                                 self.target_address = addr
                                 break
@@ -1052,7 +1052,7 @@ async def scan_ble_devices():
         for addr, (d, adv) in devices.items():
             name = d.name or adv.local_name or "Unknown Device"
             rssi = adv.rssi if hasattr(adv, "rssi") else 0
-            is_robot = ("petvision" in name.lower() or "robot" in name.lower() or addr.upper() == "70:4B:CA:83:A8:EE")
+            is_robot = ("petvision" in name.lower() or "robot" in name.lower() or "pet_link" in name.lower() or "project_pet_link" in name.lower() or addr.upper() == "70:4B:CA:83:A8:EE")
             results.append({
                 "address": addr,
                 "name": name,

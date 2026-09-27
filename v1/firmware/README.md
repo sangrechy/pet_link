@@ -1,6 +1,6 @@
-# PetVision Firmware & Hardware Pinout Guide 🔌⚡
+# project_pet_link — Firmware & Hardware Pinout Guide 🔌⚡
 
-This directory contains the firmware source code for the two ESP32 microcontrollers powering the robot, along with the master hardware wiring and GPIO allocation guide.
+This directory contains the firmware source code for the two ESP32 microcontrollers powering the **project_pet_link** robot, along with the master hardware wiring and GPIO allocation guide.
 
 ---
 

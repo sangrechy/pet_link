@@ -1,6 +1,6 @@
-# PetVision Host Application & Web Cockpit 🚀💻
+# project_pet_link — Host Application & Web Cockpit 🚀💻
 
-The `application/` folder contains the single unified Python backend, browser cockpit, and USB joystick controller for the PetVision robot.
+The `application/` folder contains the single unified Python backend, browser cockpit, and USB joystick controller for the **project_pet_link** robot.
 
 ---
 

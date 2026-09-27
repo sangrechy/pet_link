@@ -1,6 +1,8 @@
-# pet_link 🐾🤖
+# project_pet_link 🐾🤖
 
-**pet_link** is a high-performance, untethered robotics cockpit and live vision streaming system powered by dual ESP32 microcontrollers, a unified Python backend, and an interactive browser dashboard.
+[![GitHub Repository](https://img.shields.io/badge/GitHub-project__pet__link-181717?style=flat&logo=github)](https://github.com/sangrechy/project_pet_link)
+
+**project_pet_link** is a high-performance, untethered robotics cockpit and live vision streaming system powered by dual ESP32 microcontrollers, a unified Python backend, and an interactive browser dashboard.
 
 ---
 
@@ -32,7 +34,7 @@ For technical details, pinout tables, and setup instructions, refer to each subf
 
 ```text
 +-----------------------------------------------------------------------------------+
-|                              PETLINK UNIFIED COCKPIT                              |
+|                           PROJECT_PET_LINK UNIFIED COCKPIT                        |
 |   Web Browser (Canvas Stream @ :8000)   <───>   FastAPI Unified Backend Server    |
 |   USB Gamepad / Joystick (Pygame 60Hz)  ───►    (v1/application/server.py)        |
 +-----------------------------------------------------------------------------------+
@@ -54,9 +56,14 @@ For technical details, pinout tables, and setup instructions, refer to each subf
 
 ## ⚡ Quick Start (v1)
 
-1. **Install Dependencies:** Follow the setup in [**`v1/application/README.md`**](v1/application/README.md).
-2. **Review Pinouts:** Check wiring in [**`v1/firmware/README.md`**](v1/firmware/README.md).
-3. **Launch the System:**
+1. **Clone & Explore:**
+   ```bash
+   git clone https://github.com/sangrechy/project_pet_link.git
+   cd project_pet_link
+   ```
+2. **Install Dependencies:** Follow the setup in [**`v1/application/README.md`**](v1/application/README.md).
+3. **Review Pinouts:** Check wiring in [**`v1/firmware/README.md`**](v1/firmware/README.md).
+4. **Launch the System:**
    ```bash
    cd v1/application
    python launch.py
