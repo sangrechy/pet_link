@@ -1,4 +1,8 @@
 
+
+
+
+
 # 🐾🤖 project_pet_link
 
 [![GitHub Repository](https://img.shields.io/badge/GitHub-project__pet__link-181717?style=flat&logo=github)](https://github.com/sangrechy/project_pet_link)
@@ -45,7 +49,7 @@ The hardware is still messy and experimental, so I wouldn't really call this a p
 
 ## 🎥 Demo
 
-*(Put the current working demo video or GIF here)*
+https://github.com/user-attachments/assets/ae433c10-85aa-44b2-8c51-ca9b763565b3
 
 ---
 
