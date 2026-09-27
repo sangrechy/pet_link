@@ -52,11 +52,21 @@ The hardware is still messy and experimental, so I wouldn't really call this a p
 
 <div align="center">
 
-<img width="426" height="240" alt="Demo GIF" src="https://github.com/user-attachments/assets/f0dfaf66-cf36-465f-8e8b-e68c91ba18fe" />
-
-<video src="https://github.com/user-attachments/assets/ae433c10-85aa-44b2-8c51-ca9b763565b3" width="426" height="240" controls></video>
+<table>
+  <tr>
+    <td align="center" valign="middle">
+      <img width="180" alt="Demo GIF" src="https://github.com/user-attachments/assets/f0dfaf66-cf36-465f-8e8b-e68c91ba18fe" />
+      <br>
+      <b>🎵 Chipi Chipi Chapa Chapa<br>Dubi Dubi Daba Daba 🎵</b>
+    </td>
+    <td align="center" valign="middle">
+      <video src="https://github.com/user-attachments/assets/ae433c10-85aa-44b2-8c51-ca9b763565b3" width="426" height="240" controls></video>
+    </td>
+  </tr>
+</table>
 
 </div>
+
 
 ---
 
