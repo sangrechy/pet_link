@@ -4,39 +4,37 @@
 
 ---
 
-## 🌟 What is pet_link?
+## 📂 Repository Structure & Releases
 
-`pet_link` bridges low-latency computer vision, agile 4WD robotics mobility, and precision camera tracking into a single unified platform:
+The project code is organized into versioned release directories:
 
-- **Live Video Streaming:** Zero-overhead UDP live streaming (Port 5000) from an ESP32-CAM directly to an HTML5 canvas with glass-to-glass latency under 60 ms.
-- **High-Efficiency 4WD Skid-Steer Mobility:** Solves the classic 4-wheel tire scrub problem by combining a dynamic outer-wheel torque boost with a smooth, continuous inner-wheel deceleration and active counter-rotation curve.
-- **2-Axis Pan & Tilt Gimbal:** High-precision 50 Hz PWM servo tracking (0°–180°) with instantaneous one-click centering (Button 11).
-- **Wireless BLE & Dual-Channel Controls:** Wireless motion and gimbal control over Nordic UART Service (NUS) Bluetooth Low Energy, with parallel dispatch across hardware UART wires.
-- **Anti-Freeze Dual-Supervisor Architecture:** An isolated Core 0 watchdog on the camera plus an external hardware supervisor on the Main ESP32 continuously monitor communication and automatically reboot/unfreeze the camera if a DMA or sensor hang occurs.
-- **Native USB Joystick Support:** Plug-and-play game controller integration with 60 Hz polling, analog steering curves, and physical button shortcuts.
-
----
-
-## 🧭 Repository & Documentation Guide
-
-For detailed technical guides, hardware pinouts, and setup instructions, please refer to the dedicated README files in each subfolder:
-
-| Directory | Documentation Link | What It Contains |
+| Release | Status | Architecture & Highlights |
 | :--- | :--- | :--- |
-| **`application/`** | [**Application Software Guide**](application/README.md) | **How to install software dependencies**, launch the unified server, configure the 2.4 GHz hotspot, use the web cockpit, and map USB joystick controls. |
-| **`firmware/`** | [**Firmware & Master Pinout Guide**](firmware/README.md) | **Complete soldered hardware pinout**, TB6612FNG motor driver connections, servo gimbal wiring, inter-ESP32 UART bridge, and power supply rules. |
-| **`firmware/main_module/`** | [**Main ESP32 Robotics Module**](firmware/main_module/README.md) | 4WD motor kinematics, BLE GATT server (`PetVision-Robot`), failsafe motion watchdog, and camera supervisor over UART2. |
-| **`firmware/cam_module/`** | [**ESP32-CAM Vision Module**](firmware/cam_module/README.md) | UDP live video engine, 10 FPS rate pacing, 17 dBm brownout protection, and Core 0 freeze watchdog. |
+| [**`v1/`**](v1/README.md) | **Active / Production** | Dual-ESP32 4WD mobile robot with low-latency live UDP camera streaming, Pan/Tilt gimbal, USB joystick cockpit, hardware UART cross-supervision, BLE Nordic UART controls, and connection fail-safe. |
 
 ---
 
-## 🏛️ System Architecture
+## 🧭 v1 Subfolder Documentation
+
+For technical details, pinout tables, and setup instructions, refer to each subfolder inside `v1/`:
+
+| Subfolder | Documentation | Highlights |
+| :--- | :--- | :--- |
+| [**`v1/application/`**](v1/application/README.md) | [**Application Software Guide**](v1/application/README.md) | **How to install software dependencies**, launch the unified server, configure the 2.4 GHz hotspot, use the web cockpit, and map USB joystick controls. |
+| [**`v1/firmware/`**](v1/firmware/README.md) | [**Firmware & Pinout Guide**](v1/firmware/README.md) | **Complete soldered hardware pinout**, TB6612FNG motor driver connections, servo gimbal wiring, inter-ESP32 UART bridge, and power supply rules. |
+| [**`v1/firmware/main_module/`**](v1/firmware/main_module/README.md) | [**Main ESP32 Robotics Module**](v1/firmware/main_module/README.md) | 4WD motor kinematics, BLE GATT server (`PetVision-Robot`), failsafe motion watchdog, and camera supervisor over UART2. |
+| [**`v1/firmware/cam_module/`**](v1/firmware/cam_module/README.md) | [**ESP32-CAM Vision Module**](v1/firmware/cam_module/README.md) | UDP live video engine, 10 FPS rate pacing, 17 dBm brownout protection, and Core 0 freeze watchdog. |
+| [**`v1/tools/`**](v1/tools/arduino-cli/LICENSE.txt) | [**Flashing Tools**](v1/tools/arduino-cli/LICENSE.txt) | Bundled standalone Arduino CLI toolchain for firmware compilation and uploading. |
+
+---
+
+## 🏛️ System Architecture (v1)
 
 ```text
 +-----------------------------------------------------------------------------------+
 |                              PETLINK UNIFIED COCKPIT                              |
 |   Web Browser (Canvas Stream @ :8000)   <───>   FastAPI Unified Backend Server    |
-|   USB Gamepad / Joystick (Pygame 60Hz)  ───►    (application/server.py)           |
+|   USB Gamepad / Joystick (Pygame 60Hz)  ───►    (v1/application/server.py)        |
 +-----------------------------------------------------------------------------------+
                   │                                            │
          2.4 GHz Wi-Fi (UDP :5000)                      BLE Wireless Link
@@ -54,13 +52,13 @@ For detailed technical guides, hardware pinouts, and setup instructions, please 
 
 ---
 
-## ⚡ Quick Start
+## ⚡ Quick Start (v1)
 
-1. **Install Software:** Follow the step-by-step setup in the [**Application Guide**](application/README.md).
-2. **Review Pinouts & Wire Hardware:** Follow the [**Firmware & Pinout Guide**](firmware/README.md).
+1. **Install Dependencies:** Follow the setup in [**`v1/application/README.md`**](v1/application/README.md).
+2. **Review Pinouts:** Check wiring in [**`v1/firmware/README.md`**](v1/firmware/README.md).
 3. **Launch the System:**
    ```bash
-   cd application
+   cd v1/application
    python launch.py
    ```
    Open **http://localhost:8000** in your browser.

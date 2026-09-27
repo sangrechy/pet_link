@@ -1,5 +1,6 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *.class
 
@@ -12,13 +13,13 @@ ENV/
 
 # User snapshots and photos (Personal Privacy Protection)
 snapshots/
-application/snapshots/
+**/snapshots/
 *.jpg
 *.jpeg
 *.png
 
 # Toolchain binaries and caches
-tools/arduino-cli/arduino-cli.exe
+**/arduino-cli.exe
 *.bin
 *.elf
 *.hex
@@ -40,4 +41,4 @@ $RECYCLE.BIN/
 *.log
 .hotspot_session.json
 *.session.json
-application/.hotspot_session.json
+**/.hotspot_session.json
