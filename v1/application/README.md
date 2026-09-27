@@ -24,7 +24,10 @@ The `application/` folder contains the single unified Python backend, browser co
 Open PowerShell or Command Prompt in this folder and install the required Python packages:
 
 ```bash
-cd application
+# From the repository root:
+cd v1/application
+
+# Install dependencies:
 pip install -r requirements.txt
 ```
 
@@ -42,7 +45,7 @@ pip install -r requirements.txt
 The launcher automatically sets up a temporary Windows 2.4 GHz hotspot (`test_1` / `12345678`), starts the server, and restores your previous hotspot configuration upon exit:
 
 ```bash
-cd application
+cd v1/application
 python launch.py
 ```
 *(Or double-click `run.bat` in Windows Explorer).*
@@ -50,7 +53,7 @@ python launch.py
 ### Option B: Manual Launcher (Without Automated Hotspot)
 If you already have a 2.4 GHz mobile hotspot enabled on your phone:
 ```bash
-cd application
+cd v1/application
 python launch.py --no-hotspot
 ```
 *(Or run `python server.py` directly).*
