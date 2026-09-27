@@ -42,14 +42,21 @@ The hardware is still messy and experimental, so I wouldn't really call this a p
 
 ## 📸 Current Setup
 
-*<img width="426" height="240" alt="Video Project 20 (1)" src="https://github.com/user-attachments/assets/f0dfaf66-cf36-465f-8e8b-e68c91ba18fe" />
-*
+<img width="16320" height="12240" alt="IMG_20260919_120234 (1)" src="https://github.com/user-attachments/assets/9b000d55-b30b-4838-8239-f15fdc938925" />
+
+<img width="16320" height="12240" alt="IMG_20260919_120137 (1)" src="https://github.com/user-attachments/assets/69dcaa80-2d56-463c-bf14-67d41dabc3b3" />
 
 ---
 
 ## 🎥 Demo
 
-https://github.com/user-attachments/assets/ae433c10-85aa-44b2-8c51-ca9b763565b3
+<div align="center">
+
+<img width="426" height="240" alt="Demo GIF" src="https://github.com/user-attachments/assets/f0dfaf66-cf36-465f-8e8b-e68c91ba18fe" />
+
+<video src="https://github.com/user-attachments/assets/ae433c10-85aa-44b2-8c51-ca9b763565b3" width="426" height="240" controls></video>
+
+</div>
 
 ---
 
