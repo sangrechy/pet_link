@@ -1,112 +1,122 @@
 # project_pet_link — Host Application & Web Cockpit 🚀💻
 
-The `application/` folder contains the single unified Python backend, browser cockpit, and USB joystick controller for the **project_pet_link** robot.
+The `application/` folder contains the Python backend, browser cockpit and USB joystick controller for **project_pet_link**.
 
 ---
 
-## 🧭 Project Navigation
+## 📦 Requirements
 
-- [**Main Project Overview (`../README.md`)**](../README.md) — System features and architectural overview.
-- [**Hardware Pinout Guide (`../firmware/README.md`)**](../firmware/README.md) — Complete GPIO pinout table and motor driver wiring.
-- [**Main ESP32 Robotics Firmware (`../firmware/main_module/README.md`)**](../firmware/main_module/README.md) — Motion control & BLE GATT details.
-- [**ESP32-CAM Vision Firmware (`../firmware/cam_module/README.md`)**](../firmware/cam_module/README.md) — UDP live streaming & watchdog details.
-
----
-
-## 📦 How to Install Software
-
-### 1. Prerequisites
+Before starting, make sure you have:
 - **Operating System:** Windows 10/11
-- **Python Version:** Python 3.10 or higher
-- **Hardware:** Standard USB joystick or game controller
+- **Python:** Python 3.10 or higher
+- **Joystick (Optional):** A USB joystick/game controller if you want physical joystick control.
 
-### 2. Install Dependencies
-Open PowerShell or Command Prompt in this folder and install the required Python packages:
+---
 
+## 🛠️ Installation
+
+Open PowerShell or Command Prompt inside the project folder.
+
+### 1. Go to the application folder
 ```bash
-# From the repository root:
-cd v1/application
+cd v1\application
+```
 
-# Install dependencies:
+### 2. Create a virtual environment
+*(Recommended)*
+```bash
+python -m venv venv
+```
+
+### 3. Activate the virtual environment
+```powershell
+venv\Scripts\activate
+```
+After activation, you should see something like:
+```text
+(venv) C:\...\project_pet_link\v1\application>
+```
+
+### 4. Install the required packages
+```bash
 pip install -r requirements.txt
 ```
 
-#### Packages Installed:
-- **`fastapi`** & **`uvicorn`** — High-performance asynchronous REST and WebSocket web server.
-- **`bleak`** — Cross-platform Bluetooth Low Energy (BLE) client for wireless robot communication.
-- **`pygame-ce`** — Hardware joystick input driver with native 60 Hz polling.
-- **`pydantic`** — Request validation and schema parsing.
+This installs the packages required by the application, including:
+- **`fastapi`**
+- **`uvicorn`**
+- **`bleak`**
+- **`pygame-ce`**
+- **`pyserial`**
+- **`pydantic`**
 
 ---
 
-## 🚀 How to Launch the Application
+## 🚀 Running the Application
 
-### Option A: Automated Session Launcher (Recommended)
-The launcher automatically sets up a temporary Windows 2.4 GHz hotspot (`test_1` / `12345678`), starts the server, and restores your previous hotspot configuration upon exit:
+There are two ways to start the application:
 
+### Option 1 — Automatic Hotspot (Recommended)
+This is the recommended method.
 ```bash
-cd v1/application
 python launch.py
 ```
-*(Or double-click `run.bat` in Windows Explorer).*
+The launcher automatically creates the temporary 2.4 GHz Windows hotspot used by the system:
+- **SSID:** `test_1`
+- **Password:** `12345678`
 
-### Option B: Manual Launcher (Without Automated Hotspot)
-If you already have a 2.4 GHz mobile hotspot enabled on your phone:
+You can also double-click:
+```text
+run.bat
+```
+to start it.
+
+### Option 2 — Existing Hotspot / Wi-Fi
+If you already have a 2.4 GHz hotspot or Wi-Fi network configured:
 ```bash
-cd v1/application
 python launch.py --no-hotspot
 ```
-*(Or run `python server.py` directly).*
+You can also start the server directly:
+```bash
+python server.py
+```
 
 ---
 
-## 🌐 Opening the Web Cockpit
+## 🌐 Open the Web Cockpit
 
-Once the server is running, open your web browser and navigate to:
+Once the application starts, open your browser and go to:
 
-**[http://localhost:8000](http://localhost:8000)**
+👉 **[http://localhost:8000](http://localhost:8000)**
 
-### Cockpit Interface Features:
-- **GPU-Accelerated HTML5 Canvas:** Live video stream with glass-to-glass latency under 60 ms.
-- **Real-Time Telemetry HUD:** Live FPS counter, active resolution, round-trip time (RTT), and Wi-Fi RSSI.
-- **Illumination Control:** Slider (0–255 PWM) and one-click toggle for the onboard LED flashlight.
-- **Resolution Switcher:** Instant dynamic switching between QVGA, CIF, VGA, SVGA, and HD.
-- **One-Click Unfreeze / Reboot:** Triggers an immediate hardware reboot pulse across UDP and UART2 to recover a stalled camera.
-- **Snapshot Capture:** Saves full-resolution JPEG frames directly to `snapshots/`.
+The browser cockpit provides the interface for controlling the robot and viewing the live camera stream.
 
 ---
 
-## 🎮 USB Joystick Control Mapping
+## 🎮 Joystick
 
-The application runs a dedicated background Pygame thread that automatically detects when a USB joystick is connected (hotplug supported):
+If a USB joystick/gamepad is connected, the application automatically detects it.
 
-| Physical Input | Pygame ID | Function | Action Details |
-| :--- | :--- | :--- | :--- |
-| **Left Stick Y** | `AXIS_1` | **Vehicle Throttle** | Forward / Backward proportional speed |
-| **Left Stick X** | `AXIS_0` | **Skid-Steer Steering** | Linear inner-wheel deceleration + dynamic outer-wheel boost |
-| **Right Stick X / Y** | `AXIS_2 / 3` | **Camera Gimbal** | Pan (GPIO 2) & Tilt (GPIO 5) servo positioning |
-| **Button 11** | `BUTTON_11` | **Center Camera** | Instantly centers Pan & Tilt servos to 90° / 90° |
-| **D-Pad UP** | `HAT (0, 1)` | **Front Wheel Brake** | Cuts power to front motors only |
-| **D-Pad DOWN** | `HAT (0, -1)` | **Rear Wheel Brake** | Cuts power to rear motors only |
-| **D-Pad LEFT / RIGHT**| `HAT (±1, 0)` | **Dedicated Spin** | High-speed zero-radius in-place spin |
-| **Button 0** | `BUTTON_0` | **Flashlight Toggle** | Dual-path toggle via UDP and hardware UART wire (<1 ms) |
-| **Button 1** | `BUTTON_1` | **Snapshot** | Saves timestamped JPEG to disk |
-| **Button 4 / 5** | `BUTTON_4 / 5`| **Car Speed − / +** | Decrements / Increments vehicle max speed by 20 PWM |
-| **Button 6 / 7** | `BUTTON_6 / 7`| **Camera Speed − / +**| Decrements / Increments gimbal step angle by 1° |
+The main controls are:
+
+| Input | Function |
+| :--- | :--- |
+| **Left Stick** | Move the car |
+| **Right Stick** | Pan / Tilt camera |
+| **D-Pad** | Brake / Spin controls |
+| **Button 0** | Flashlight |
+| **Button 1** | Snapshot |
+| **Button 11** | Center camera |
+| **Button 4 / 5** | Car speed − / + |
+| **Button 6 / 7** | Camera speed − / + |
 
 ---
 
-## 📡 REST & WebSocket API Endpoints
+## 📁 Related Documentation
 
-| Endpoint | Method | Protocol | Description |
-| :--- | :--- | :--- | :--- |
-| `/ws/live` | WebSocket | Binary | Ultra-low-latency binary video stream with `PV01` telemetry header |
-| `/ws/control` | WebSocket | Text | Bi-directional motion and gimbal command stream |
-| `/api/config` | `GET` / `POST` | JSON | Read or update camera network configuration and state |
-| `/api/light` | `GET` | JSON | Adjust or toggle flashlight PWM brightness |
-| `/api/resolution` | `GET` | JSON | Dynamically change camera resolution (framesize 0–13) |
-| `/api/quality` | `GET` | JSON | Adjust JPEG compression quality (10–63) |
-| `/api/camera/reboot`| `GET` | JSON | Dispatches reboot trigger simultaneously via UDP and UART2 bridge |
-| `/api/robot/command`| `GET` / `POST` | JSON | Sends a raw motion/gimbal command to the robot |
-| `/api/robot/status` | `GET` | JSON | Reads BLE connection status, current angles, and joystick state |
-| `/api/snapshot` | `GET` | Image/JPEG | Captures and downloads the latest frame |
+For the other parts of the project:
+- **Hardware & Pinout:** [../firmware/README.md](../firmware/README.md)
+- **Main ESP32 Firmware:** [../firmware/main_module/README.md](../firmware/main_module/README.md)
+- **ESP32-CAM Firmware:** [../firmware/cam_module/README.md](../firmware/cam_module/README.md)
+
+For hardware wiring and firmware setup, refer to the [Firmware README](../firmware/README.md).
